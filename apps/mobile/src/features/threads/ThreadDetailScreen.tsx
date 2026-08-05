@@ -16,6 +16,7 @@ import type {
   ThreadId,
   UserInputQuestion,
 } from "@t3tools/contracts";
+import type { ActiveTurnMessageBehavior } from "@t3tools/contracts/settings";
 import * as Haptics from "expo-haptics";
 import {
   memo,
@@ -101,6 +102,7 @@ export interface ThreadDetailScreenProps {
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
   readonly activeThreadBusy: boolean;
+  readonly activeTurnMessageBehavior: ActiveTurnMessageBehavior;
   readonly environmentId: EnvironmentId;
   readonly projectWorkspaceRoot: string | null;
   readonly threadCwd: string | null;
@@ -727,6 +729,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 serverConfig={props.serverConfig}
                 queueCount={props.selectedThreadQueueCount}
                 activeThreadBusy={props.activeThreadBusy}
+                activeTurnMessageBehavior={props.activeTurnMessageBehavior}
                 environmentId={props.environmentId}
                 projectCwd={props.projectWorkspaceRoot}
                 bottomInset={composerBottomInset}
