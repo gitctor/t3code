@@ -5155,6 +5155,9 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
+      for (const image of composerImagesSnapshot) {
+        revokeBlobPreviewUrl(image.previewUrl);
+      }
       sendInFlightRef.current = false;
       return;
     }
