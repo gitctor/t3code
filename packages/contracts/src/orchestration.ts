@@ -365,6 +365,9 @@ export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  // New servers always emit null for roots. Optional decoding keeps cached
+  // pre-ancestry snapshots readable during a rolling upgrade.
+  parentThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -435,6 +438,9 @@ export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  // New servers always emit null for roots. Optional decoding keeps cached
+  // pre-ancestry shells readable during a rolling upgrade.
+  parentThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -680,6 +686,7 @@ const ThreadCreateCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   projectId: ProjectId,
+  parentThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
@@ -1197,6 +1204,7 @@ export const ProjectDeletedPayload = Schema.Struct({
 export const ThreadCreatedPayload = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
+  parentThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),

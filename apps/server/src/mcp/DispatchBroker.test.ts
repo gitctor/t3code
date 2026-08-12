@@ -253,6 +253,7 @@ const withHarness = <A, E>(
           });
         }
         if (command.type === "thread.create") {
+          expect(command.parentThreadId).toBe(parentThreadId);
           threads.set(
             command.threadId,
             thread({

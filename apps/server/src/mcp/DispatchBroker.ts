@@ -450,6 +450,7 @@ export const make = Effect.gen(function* () {
         commandId: yield* commandId("child-create"),
         threadId: childThreadId,
         projectId: planner.thread.projectId,
+        parentThreadId: scope.threadId,
         title,
         modelSelection: {
           instanceId: input.instanceId,

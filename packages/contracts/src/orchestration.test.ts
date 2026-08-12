@@ -313,6 +313,27 @@ it.effect("decodes thread.created runtime mode for historical events", () =>
 
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
     assert.strictEqual(parsed.modelSelection.instanceId, "codex");
+    assert.strictEqual(parsed.parentThreadId, undefined);
+  }),
+);
+
+it.effect("decodes parent ancestry on new thread.created events", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadCreatedPayload({
+      threadId: "child-thread",
+      projectId: "project-1",
+      parentThreadId: "parent-thread",
+      title: "Child thread",
+      modelSelection: { instanceId: "claudeAgent", model: "claude-opus-4-1" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "dispatch/child-thread",
+      worktreePath: "/repo/child-thread",
+      createdAt: "2026-08-11T12:00:00.000Z",
+      updatedAt: "2026-08-11T12:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.parentThreadId, "parent-thread");
   }),
 );
 
