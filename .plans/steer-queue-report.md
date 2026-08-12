@@ -88,7 +88,7 @@ Type checks:
 - `apps/server`: passed `tsgo --noEmit`.
 - `packages/contracts`: passed `tsgo --noEmit`.
 - `apps/web`: passed `tsgo --noEmit` in the live working tree, including the concurrent crew-editor edits.
-- `apps/mobile`: `tsgo --noEmit` still reports 64 existing React Navigation route inference errors across unrelated screens. No active-turn file appears in the remaining error list. The focused mobile tests pass.
+- `apps/mobile`: `tsgo --noEmit` still reports 64 existing React Navigation route inference errors. Two errors are in `SettingsRouteScreen.tsx`, but both predate this feature and are outside the active-turn hunks. No error points to added active-turn code. The focused mobile tests pass.
 
 ## Visual QA checklist
 
