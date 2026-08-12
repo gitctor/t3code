@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   CommandId,
+  CrewId,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -10,6 +11,7 @@ import {
 import { AtomRegistry } from "effect/unstable/reactivity";
 
 import {
+  buildQueuedThreadTurnStartInput,
   decodeQueuedThreadMessage,
   encodeQueuedThreadMessage,
   groupQueuedThreadMessages,
@@ -108,6 +110,32 @@ describe("thread outbox", () => {
       modelSelection: selectedMessage.modelSelection,
       runtimeMode: selectedMessage.runtimeMode,
       interactionMode: selectedMessage.interactionMode,
+    });
+  });
+
+  it("persists crew planner routing and restores it for queued delivery", () => {
+    const crewId = CrewId.make("orchestrator");
+    const message = {
+      ...queuedMessage({
+        messageId: "message-crew-planner",
+        createdAt: "2026-08-12T15:00:00.000Z",
+      }),
+      crewId,
+    } satisfies QueuedThreadMessage;
+    const decoded = decodeQueuedThreadMessage(encodeQueuedThreadMessage(message));
+    const settings = {
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("kimi"),
+        model: "kimi-k3",
+      },
+      runtimeMode: "full-access" as const,
+      interactionMode: "default" as const,
+    };
+
+    expect(decoded.crewId).toBe(crewId);
+    expect(buildQueuedThreadTurnStartInput(decoded, settings)).toMatchObject({
+      threadId: message.threadId,
+      crewId,
     });
   });
 

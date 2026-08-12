@@ -215,6 +215,7 @@ export function useThreadComposerState() {
       runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
       interactionMode: draft.interactionMode ?? thread.interactionMode,
       activeTurnMessageBehavior: sendBehavior,
+      ...(thread.latestTurn?.crewId ? { crewId: thread.latestTurn.crewId } : {}),
       createdAt: metadata.createdAt,
     });
     enqueuePromise.catch((error: unknown) => {

@@ -2,6 +2,7 @@ import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/error
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import {
   CommandId,
+  CrewId,
   EnvironmentId,
   IsoDateTime,
   MessageId,
@@ -10,6 +11,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
+  type CrewId as CrewIdType,
   type ModelSelection as ModelSelectionType,
   type ProjectId as ProjectIdType,
   type ProviderInteractionMode as ProviderInteractionModeType,
@@ -25,7 +27,7 @@ import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 
-const THREAD_OUTBOX_SCHEMA_VERSION = 4;
+const THREAD_OUTBOX_SCHEMA_VERSION = 5;
 const THREAD_OUTBOX_MAX_RETRY_DELAY_MS = 16_000;
 
 const QueuedThreadCreationSchema = Schema.Struct({
@@ -41,7 +43,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
-  schemaVersion: Schema.Literals([1, 2, 3, THREAD_OUTBOX_SCHEMA_VERSION]),
+  schemaVersion: Schema.Literals([1, 2, 3, 4, THREAD_OUTBOX_SCHEMA_VERSION]),
   environmentId: EnvironmentId,
   threadId: ThreadId,
   messageId: MessageId,
@@ -52,6 +54,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   activeTurnMessageBehavior: Schema.optional(ActiveTurnMessageBehavior),
+  crewId: Schema.optional(CrewId),
   // Present when the queued item creates a brand-new thread (pending task)
   // instead of appending a turn to an existing one.
   creation: Schema.optional(QueuedThreadCreationSchema),
@@ -86,6 +89,8 @@ export interface QueuedThreadMessage {
    * outbox entries omit this and retain the historical queue behavior.
    */
   readonly activeTurnMessageBehavior?: ActiveTurnMessageBehaviorType;
+  /** Crew selected for the planner turn when this message was queued. */
+  readonly crewId?: CrewIdType;
   readonly creation?: QueuedThreadCreation;
   readonly createdAt: string;
 }
@@ -104,6 +109,33 @@ export function resolveQueuedThreadSettings(
     modelSelection: message.modelSelection ?? thread.modelSelection,
     runtimeMode: message.runtimeMode ?? thread.runtimeMode,
     interactionMode: message.interactionMode ?? thread.interactionMode,
+  };
+}
+
+export function buildQueuedThreadTurnStartInput(
+  message: QueuedThreadMessage,
+  settings: ThreadSettingsSnapshot,
+) {
+  return {
+    commandId: message.commandId,
+    threadId: message.threadId,
+    message: {
+      messageId: message.messageId,
+      role: "user" as const,
+      text: message.text,
+      attachments: message.attachments.map((attachment) => ({
+        type: attachment.type,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        dataUrl: attachment.dataUrl,
+      })),
+    },
+    modelSelection: settings.modelSelection,
+    runtimeMode: settings.runtimeMode,
+    interactionMode: settings.interactionMode,
+    ...(message.crewId ? { crewId: message.crewId } : {}),
+    createdAt: message.createdAt,
   };
 }
 
