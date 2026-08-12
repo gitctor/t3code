@@ -45,7 +45,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderStandaloneStop() {
+function renderStandaloneStop(activeTurnMessageBehavior: "steer" | "queue" = "steer") {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -59,7 +59,7 @@ function renderStandaloneStop() {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: false,
-      activeTurnMessageBehavior: "steer",
+      activeTurnMessageBehavior,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -81,6 +81,7 @@ function renderSendButton() {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: true,
+      activeTurnMessageBehavior: "steer",
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -196,6 +197,16 @@ describe("ComposerPrimaryActions", () => {
     expect(renderPendingActions(true)).toContain("size-8 sm:size-7");
     expect(renderStandaloneStop()).toContain("size-8 sm:h-8 sm:w-8");
     expect(renderStandaloneStop()).not.toContain("sm:size-7");
+  });
+
+  it("keeps Stop beside the mode-specific send action during a running turn", () => {
+    const steerMarkup = renderStandaloneStop("steer");
+    const queueMarkup = renderStandaloneStop("queue");
+
+    expect(steerMarkup).toContain('aria-label="Stop generation"');
+    expect(steerMarkup).toContain('aria-label="Steer active turn"');
+    expect(queueMarkup).toContain('aria-label="Stop generation"');
+    expect(queueMarkup).toContain('aria-label="Queue message"');
   });
 
   it("renders stage artwork inside the send button when artwork identification is active", () => {
