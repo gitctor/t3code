@@ -1,11 +1,12 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
+import { useAccountLimits } from "../../state/accountLimits";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
   enumerateDays,
@@ -23,6 +24,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
+import { AccountLimitsSection } from "./AccountLimits";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
 
@@ -42,7 +44,14 @@ export function UsagePage() {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, refresh: refreshUsage } = useUsage(window);
+  const { refresh: refreshLimits } = useAccountLimits();
+  // One refresh button, two caches: the transcript scan and the limits
+  // snapshot both re-read, or the Limits strip lags the rest of the page.
+  const refresh = useCallback(() => {
+    refreshUsage();
+    refreshLimits();
+  }, [refreshUsage, refreshLimits]);
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -166,6 +175,10 @@ export function UsagePage() {
                 </button>
               </div>
             </div>
+
+            {/* Limits use the passive provider-event cache, so they can render
+                while transcript usage is still settling. */}
+            <AccountLimitsSection />
 
             {settling ? (
               <>

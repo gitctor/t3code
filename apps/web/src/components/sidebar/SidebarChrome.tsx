@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { AccountLimitsHoverCard, AccountLimitsSidebarGauges } from "../usage/AccountLimits";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -205,16 +206,20 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
                 </Tooltip>
               </SidebarMenuItem>
             ) : null}
-            <SidebarMenuItem className="shrink-0">
+            <SidebarMenuItem className="min-w-0 flex-1">
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <SidebarMenuButton aria-label="Usage" onClick={handleUsageClick} size="icon">
+                    <SidebarMenuButton aria-label="Usage" onClick={handleUsageClick}>
                       <ChartNoAxesColumnIcon />
+                      <span>Usage</span>
+                      <AccountLimitsSidebarGauges />
                     </SidebarMenuButton>
                   }
                 />
-                <TooltipPopup side="top">Usage</TooltipPopup>
+                <TooltipPopup align="end" side="top" sideOffset={8}>
+                  <AccountLimitsHoverCard />
+                </TooltipPopup>
               </Tooltip>
             </SidebarMenuItem>
           </>

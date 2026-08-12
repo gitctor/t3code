@@ -211,7 +211,7 @@ export const GrokIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
-/** Moonshot Kimi mark — simplified “K” monogram for provider picker chips. */
+/** Moonshot Kimi mark — simplified “K” monogram for provider surfaces. */
 export const KimiIcon: Icon = ({ className, ...props }) => (
   <svg
     {...props}
