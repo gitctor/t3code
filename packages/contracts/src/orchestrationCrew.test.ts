@@ -4,11 +4,14 @@ import * as Schema from "effect/Schema";
 import {
   Crew,
   CrewId,
+  DispatchInput,
   DispatchRecord,
   ResolvedCrew,
   isRunnableCrew,
   isSettledDispatchStatus,
 } from "./orchestrationCrew.ts";
+import { ThreadTurnStartCommand } from "./orchestration.ts";
+import { TaskAgentLinkage } from "./providerRuntime.ts";
 
 const decodeCrewId = Schema.decodeUnknownSync(CrewId);
 const decodeCrew = Schema.decodeUnknownSync(Crew);
@@ -87,6 +90,44 @@ describe("dispatch lifecycle", () => {
     });
     expect(record.childThreadId).toBeUndefined();
     expect(isSettledDispatchStatus(record.status)).toBe(true);
+  });
+});
+
+describe("cross-cutting contract additions", () => {
+  const decodeTurnStart = Schema.decodeUnknownSync(ThreadTurnStartCommand);
+  const decodeLinkage = Schema.decodeUnknownSync(TaskAgentLinkage);
+  const decodeDispatchInput = Schema.decodeUnknownSync(DispatchInput);
+
+  const baseTurnStart = {
+    type: "thread.turn.start",
+    commandId: "c1",
+    threadId: "t1",
+    message: { messageId: "m1", role: "user", text: "go", attachments: [] },
+    createdAt: "2026-08-11T23:00:00.000Z",
+  };
+
+  it("turn start decodes without a crewId — every existing payload is unchanged", () => {
+    expect(decodeTurnStart(baseTurnStart).crewId).toBeUndefined();
+  });
+
+  it("turn start carries a crewId when the composer starts an orchestrated turn", () => {
+    expect(decodeTurnStart({ ...baseTurnStart, crewId: "deep_build" }).crewId).toBe("deep_build");
+  });
+
+  it("task linkage carries dispatch identity, and legacy rows decode without it", () => {
+    expect(decodeLinkage({})).toEqual({});
+    const linked = decodeLinkage({ instanceId: "kimi", childThreadId: "t9" });
+    expect(linked.instanceId).toBe("kimi");
+    expect(linked.childThreadId).toBe("t9");
+  });
+
+  it("dispatch input chains onto a prior dispatch via fromDispatchId", () => {
+    const input = decodeDispatchInput({
+      instanceId: "claudeAgent",
+      prompt: "review the builder's diff",
+      fromDispatchId: "d1",
+    });
+    expect(input.fromDispatchId).toBe("d1");
   });
 });
 

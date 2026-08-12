@@ -22,6 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { CrewId } from "./orchestrationCrew.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -826,6 +827,13 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /**
+   * Present when this turn runs under a saved crew (cross-provider
+   * orchestration). The server resolves the crew, grants the session the
+   * `orchestration` MCP capability, and injects the crew briefing. Absent on
+   * every ordinary turn, and old payloads decode unchanged.
+   */
+  crewId: Schema.optional(CrewId),
   createdAt: IsoDateTime,
 });
 
@@ -845,6 +853,8 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /** Client mirror of `ThreadTurnStartCommand.crewId` — same contract. */
+  crewId: Schema.optional(CrewId),
   createdAt: IsoDateTime,
 });
 

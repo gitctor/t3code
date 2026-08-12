@@ -201,6 +201,14 @@ export const DispatchInput = Schema.Struct({
   model: Schema.optionalKey(TrimmedNonEmptyString),
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(DISPATCH_PROMPT_MAX_CHARS)),
   role: Schema.optionalKey(CrewMemberRole),
+  /**
+   * Chain this dispatch onto an earlier one's output: the child's worktree
+   * branches from that dispatch's child-thread branch instead of the parent's.
+   * This is how build-then-review works — the reviewer sees the builder's
+   * commits. The referenced dispatch must be settled `completed`; anything
+   * else fails with `dispatch-not-found`.
+   */
+  fromDispatchId: Schema.optionalKey(DispatchId),
 });
 export type DispatchInput = typeof DispatchInput.Type;
 

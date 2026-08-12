@@ -200,6 +200,52 @@ Issue **#4149**: the Claude driver's explicit model slug bypasses the
 in the live checkout. A Fable-pinned planner hits this directly. Read it before
 step 2; it may need fixing first, and if so, that is a separate commit.
 
+## Audit deltas (2026-08-11, after contract v2)
+
+A design audit closed these gaps. They override anything above that conflicts.
+
+1. **Crew selection now has a wire contract.** `ThreadTurnStartCommand` and
+   `ClientThreadTurnStartCommand` both carry `crewId: optional(CrewId)`.
+   Step 2's capability wiring keys off this field: `crewId` present → resolve
+   crew → grant `orchestration` capability → inject briefing. The thread read
+   model should persist the last crew so follow-up turns default to it.
+2. **"Zero schema change" for the panel was overclaimed — now corrected in
+   the contract.** `taskAgentLinkageFields` gained optional `instanceId` and
+   `childThreadId`. Step 4's done-criteria still holds for rendering a row
+   (all fields optional; legacy rows decode unchanged), and the dispatch
+   projection MUST stamp both fields — they power the provider icon and the
+   transcript drawer.
+3. **Child worktree policy is decided.** Every dispatched child gets its own
+   worktree branched from the parent thread's current branch. No flag, no
+   sharing the parent checkout. Chained work uses the new
+   `DispatchInput.fromDispatchId`: the child branches from that dispatch's
+   child-thread branch instead (build → review). Referenced dispatch must be
+   settled `completed`, else `dispatch-not-found`.
+4. **`await_dispatch` must not long-poll the transport.** MCP clients kill
+   long-blocked HTTP tool calls. Handler waits on receipts with no pinned
+   resources; the crew briefing instructs planners to loop with
+   `timeoutSeconds` ≤ 300. Timeout returns `status: "running"` — never an
+   error.
+5. **Kimi does not exist in this fork yet.** The Kimi seat needs upstream
+   PR #5243 (Kimi Code CLI over ACP) or #6071 (generic ACP registry).
+   Isolated phase: `git fetch upstream pull/5243/head` and cherry-pick onto a
+   separate branch first; do not entangle it with the dispatch work. Crews
+   ship day one with Codex + Claude seats regardless.
+6. **Crew briefing is server-owned text**, one versioned file, identical
+   content for every planner provider; adapters only deliver it. Content
+   spec: `.plans/cross-provider-orchestration-ux.md` §6.
+7. **Child threads are hidden from the sidebar.** The thread read model must
+   expose `parentThreadId` so clients can filter. UX spec §3 has the rules,
+   including delete-cascade prompt behavior.
+8. **Concurrency cap default is 4** concurrent non-settled dispatches per
+   parent turn. Over cap → `dispatch-limit-reached`.
+9. **Parent turn ending with live children is a planner error**: cancel
+   children, append the system line from UX spec §7.
+10. **The full UX is specified** in `.plans/cross-provider-orchestration-ux.md`.
+    Backend work must satisfy it but not build it — the UI phases (6–7 above)
+    are being done separately by Claude. Your scope ends at the read model,
+    events, and MCP toolkit.
+
 ## Commit style
 
 Conventional titles, plain language: `feat(server): dispatch work across

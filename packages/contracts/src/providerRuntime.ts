@@ -581,6 +581,20 @@ const taskAgentLinkageFields = {
    * belongs in the Agents surface, never the parent timeline.
    */
   timelineBypass: Schema.optional(Schema.Boolean),
+  /**
+   * Provider instance that runs this task's agent, set on cross-provider
+   * dispatches (orchestration) where the child runs on a different instance
+   * than the parent. Absent on provider-native subagents — the child shares
+   * the parent's instance, and clients fall back to it. Lets the Agents
+   * surface show which provider a child belongs to.
+   */
+  instanceId: Schema.optional(TrimmedNonEmptyStringSchema),
+  /**
+   * Child thread backing this task, set on cross-provider dispatches so
+   * clients can open the child's transcript from its agent row. Absent on
+   * provider-native subagents, which have no thread of their own.
+   */
+  childThreadId: Schema.optional(TrimmedNonEmptyStringSchema),
 } as const;
 
 export const TaskAgentLinkage = Schema.Struct(taskAgentLinkageFields);
