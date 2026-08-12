@@ -3684,6 +3684,37 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("keeps custom Claude-prefixed model slugs literal", () => {
+    const harness = makeHarness({
+      environment: {
+        ...process.env,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "moonshotai/kimi-k3",
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "continue",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-private-endpoint",
+        },
+        attachments: [],
+      });
+      assert.deepEqual(harness.query.setModelCalls, ["claude-sonnet-private-endpoint"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("updates model on sendTurn for the adapter's bound custom instance id", () => {
     const customInstanceId = ProviderInstanceId.make("claude_openrouter");
     const harness = makeHarness({ instanceId: customInstanceId });

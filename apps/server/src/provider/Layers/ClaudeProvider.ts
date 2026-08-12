@@ -453,6 +453,7 @@ function resolveClaudeFamilyAlias(
   model: string,
   environment: NodeJS.ProcessEnv | undefined,
 ): string {
+  if (!CLAUDE_MODEL_CATALOG.some((candidate) => candidate.slug === model)) return model;
   const family = /^claude-(opus|sonnet|haiku)(?:-|$)/u.exec(model)?.[1];
   if (!family) return model;
 
