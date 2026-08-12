@@ -133,7 +133,7 @@ function AccountLimitsSidebarGauge({
             return (
               <g key={window.id}>
                 <circle
-                  className="text-sidebar-border/80"
+                  className="text-muted-foreground/30"
                   cx="16"
                   cy="16"
                   fill="none"

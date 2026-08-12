@@ -197,7 +197,9 @@ export function CrewPickerPane(props: {
                   >
                     <button
                       type="button"
-                      className="min-w-0 flex-1 text-left"
+                      // pr-20 clears the absolutely-positioned trailing cluster (jump key +
+                      // edit + favorite ≈ 80px) on all three row lines, not just the name.
+                      className="min-w-0 flex-1 pr-20 text-left"
                       onClick={() => {
                         if (reason) {
                           setEditingCrew(crew);
@@ -207,9 +209,7 @@ export function CrewPickerPane(props: {
                         props.onRequestClose?.();
                       }}
                     >
-                      <span className="block truncate pr-14 text-sm font-medium">
-                        ◆ {crew.name}
-                      </span>
+                      <span className="block truncate text-sm font-medium">◆ {crew.name}</span>
                       <span
                         className="block truncate text-xs"
                         style={
