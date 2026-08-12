@@ -1,5 +1,6 @@
 import {
   CommandId,
+  CrewId,
   EnvironmentId,
   MessageId,
   ModelSelection,
@@ -60,6 +61,7 @@ const QueuedWebThreadMessageSchema = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   activeTurnMessageBehavior: Schema.optional(ActiveTurnMessageBehavior),
+  crewId: Schema.optional(CrewId),
   createdAt: Schema.String,
 });
 
@@ -74,6 +76,7 @@ export interface QueuedWebThreadMessage {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly activeTurnMessageBehavior: ActiveTurnMessageBehaviorType;
+  readonly crewId?: CrewId;
   readonly createdAt: string;
 }
 
@@ -90,9 +93,11 @@ const decodePersistedEntry = Schema.decodeUnknownSync(PersistedWebThreadOutboxEn
 function normalizeMessage(
   message: typeof QueuedWebThreadMessageSchema.Type,
 ): QueuedWebThreadMessage {
+  const { crewId, ...rest } = message;
   return {
-    ...message,
+    ...rest,
     activeTurnMessageBehavior: message.activeTurnMessageBehavior ?? "queue",
+    ...(crewId ? { crewId } : {}),
   };
 }
 

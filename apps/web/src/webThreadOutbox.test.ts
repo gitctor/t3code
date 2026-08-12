@@ -1,5 +1,6 @@
 import {
   CommandId,
+  CrewId,
   EnvironmentId,
   MessageId,
   ProviderInstanceId,
@@ -84,6 +85,17 @@ describe("web thread outbox", () => {
         webThreadOutboxKey(environmentId, threadId)
       ],
     ).toEqual([queued]);
+  });
+
+  it("persists the crew identity for a queued planner turn", () => {
+    const queued = { ...message(2), crewId: CrewId.make("orchestrator") };
+    writeWebThreadOutboxEntryForTest(queued);
+
+    expect(
+      useWebThreadOutboxStore.getState().queuesByThreadKey[
+        webThreadOutboxKey(environmentId, threadId)
+      ]?.[0]?.crewId,
+    ).toBe(queued.crewId);
   });
 
   it("deduplicates stable message ids and removes only the delivered head", () => {

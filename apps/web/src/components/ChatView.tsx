@@ -5134,6 +5134,7 @@ function ChatViewContent(props: ChatViewProps) {
         runtimeMode,
         interactionMode,
         activeTurnMessageBehavior,
+        ...(ctxCrewId ? { crewId: ctxCrewId } : {}),
         createdAt,
       });
       setThreadError(threadIdForSend, null);

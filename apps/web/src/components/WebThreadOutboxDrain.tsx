@@ -2,7 +2,10 @@ import { CommandId } from "@t3tools/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 import { resolveThreadMetadataUpdateForNextTurn } from "./ChatView.logic";
-import { shouldPauseWebThreadOutboxDelivery } from "./WebThreadOutboxDrain.logic";
+import {
+  buildQueuedWebThreadTurnStartInput,
+  shouldPauseWebThreadOutboxDelivery,
+} from "./WebThreadOutboxDrain.logic";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { useEnvironments } from "../state/environments";
 import { useThreadShells } from "../state/entities";
@@ -140,21 +143,7 @@ export function WebThreadOutboxDrain() {
 
       return startThreadTurn({
         environmentId: message.environmentId,
-        input: {
-          commandId: message.commandId,
-          threadId: message.threadId,
-          message: {
-            messageId: message.messageId,
-            role: "user",
-            text: message.text,
-            attachments: message.attachments,
-          },
-          modelSelection: message.modelSelection,
-          titleSeed: thread.title,
-          runtimeMode: message.runtimeMode,
-          interactionMode: message.interactionMode,
-          createdAt: message.createdAt,
-        },
+        input: buildQueuedWebThreadTurnStartInput(message, thread.title),
       });
     };
 
