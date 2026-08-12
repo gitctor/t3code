@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
+  providerSupportsActiveTurnSteer,
+  resolveActiveTurnMessageBehavior,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
@@ -80,6 +82,22 @@ describe("ClientSettings messages while working", () => {
 
   it("rejects unsupported delivery behaviors", () => {
     expect(() => decodeClientSettingsPatch({ activeTurnMessageBehavior: "send-later" })).toThrow();
+  });
+
+  it.each(["claudeAgent", "codex", "cursor", "grok", "opencode"])(
+    "uses native steering for %s",
+    (driverKind) => {
+      const driver = ProviderDriverKind.make(driverKind);
+      expect(providerSupportsActiveTurnSteer(driver)).toBe(true);
+      expect(resolveActiveTurnMessageBehavior("steer", driver)).toBe("steer");
+    },
+  );
+
+  it.each(["kimi", "custom-driver"])("falls back to queue for %s", (driverKind) => {
+    const driver = ProviderDriverKind.make(driverKind);
+    expect(providerSupportsActiveTurnSteer(driver)).toBe(false);
+    expect(resolveActiveTurnMessageBehavior("steer", driver)).toBe("queue");
+    expect(resolveActiveTurnMessageBehavior("queue", driver)).toBe("queue");
   });
 });
 

@@ -106,8 +106,7 @@ interface KimiSessionContext {
   /** Turns already interrupted; late prompt RPCs must not resurrect them. */
   interruptedTurnIds: Set<TurnId>;
   /** Number of sendTurn prompts currently in flight or being prepared.
-   * >0 means a turn is actively running, so a new sendTurn is a steer that
-   * continues it, and only the last remaining prompt settles the turn. */
+   * Kimi ACP supports one active prompt per session. */
   promptsInFlight: number;
   currentModelId: string | undefined;
   stopped: boolean;
@@ -856,21 +855,24 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
           input.threadId,
           Effect.gen(function* () {
             const ctx = yield* requireSession(input.threadId);
-            // A sendTurn while a prompt is in flight is a steer: the agent
-            // folds the new prompt into the ongoing work, so the active turn
-            // id is reused instead of opening a new turn.
-            const steeringTurnId = ctx.promptsInFlight > 0 ? ctx.activeTurnId : undefined;
-            const turnId = steeringTurnId ?? TurnId.make(yield* randomUUIDv4);
-            // Count this prompt immediately so a superseded in-flight prompt
-            // resolving from here on does not settle the turn; decremented on
-            // preparation failure here, and after the prompt below otherwise.
+            if (ctx.promptsInFlight > 0) {
+              return yield* new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "session/prompt",
+                detail:
+                  "Kimi ACP cannot accept another prompt while the active turn is running. Queue the message until the turn settles.",
+              });
+            }
+            const turnId = TurnId.make(yield* randomUUIDv4);
+            // Count this prompt immediately; decremented on preparation
+            // failure here, and after the prompt below otherwise.
             ctx.promptsInFlight += 1;
             // Bind the turn id before cooperative yields so interruptTurn can
             // settle this prompt even if stop arrives during preparation.
             ctx.activeTurnId = turnId;
             ctx.session = {
               ...ctx.session,
-              status: steeringTurnId === undefined ? "connecting" : "running",
+              status: "connecting",
               activeTurnId: turnId,
               updatedAt: yield* nowIso,
             };
@@ -958,9 +960,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                   detail: "Kimi prompt was interrupted during preparation.",
                 });
               }
-              if (steeringTurnId === undefined) {
-                ctx.lastPlanFingerprint = undefined;
-              }
+              ctx.lastPlanFingerprint = undefined;
               ctx.session = {
                 ...ctx.session,
                 status: "running",
@@ -969,16 +969,14 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                 ...(displayModel ? { model: displayModel } : {}),
               };
 
-              if (steeringTurnId === undefined) {
-                yield* offerRuntimeEvent({
-                  type: "turn.started",
-                  ...(yield* makeEventStamp()),
-                  provider: PROVIDER,
-                  threadId: input.threadId,
-                  turnId,
-                  payload: displayModel ? { model: displayModel } : {},
-                });
-              }
+              yield* offerRuntimeEvent({
+                type: "turn.started",
+                ...(yield* makeEventStamp()),
+                provider: PROVIDER,
+                threadId: input.threadId,
+                turnId,
+                payload: displayModel ? { model: displayModel } : {},
+              });
 
               return {
                 acp: ctx.acp,
@@ -1055,7 +1053,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                   detail: "Kimi session changed before the turn completed.",
                 });
               }
-              // Keep prompt settlement atomic with respect to Stop and steering.
+              // Keep prompt settlement atomic with respect to Stop.
               // interruptTurn marks its target before waiting for this lock, so
               // cancellation can still win while queued ACP events are drained.
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
@@ -1095,9 +1093,8 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
               const remainingPrompts = Math.max(0, ctx.promptsInFlight - 1);
               ctx.promptsInFlight = remainingPrompts;
 
-              // Only the last remaining prompt settles the turn. A steer-
-              // superseded prompt resolving while another is in flight or
-              // pending must leave the merged turn running.
+              // Only the active prompt can settle the turn. Stop may have
+              // consumed its prompt slot while queued ACP events drained.
               if (
                 remainingPrompts === 0 &&
                 ctx.activeTurnId === prepared.turnId &&

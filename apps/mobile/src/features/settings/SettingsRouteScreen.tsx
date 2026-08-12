@@ -538,7 +538,7 @@ function GeneralSettingsSection() {
         onPress={() =>
           Alert.alert(
             "Messages while working",
-            "Steer adds the message to the active turn. Queue waits and sends messages one at a time after the current turn finishes.",
+            "Steer adds the message to the active turn. Queue waits and sends messages one at a time after the current turn finishes. Kimi ACP and unknown providers always use Queue.",
             [
               {
                 text: "Steer",

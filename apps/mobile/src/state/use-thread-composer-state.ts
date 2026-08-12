@@ -8,10 +8,14 @@ import {
   type EnvironmentId,
   type ModelSelection,
   type ProviderInteractionMode,
+  type ProviderInstanceId,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
-import { DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR } from "@t3tools/contracts/settings";
+import {
+  DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR,
+  resolveActiveTurnMessageBehavior,
+} from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 
@@ -41,6 +45,7 @@ import {
 import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
+import { useServerConfigs } from "./entities";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 import { awaitActiveTurnMessageBehavior, mobilePreferencesAtom } from "./preferences";
@@ -81,8 +86,9 @@ export function useThreadComposerState() {
   const selectedThreadDetail = useSelectedThreadDetail();
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const serverConfigs = useServerConfigs();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  const activeTurnMessageBehavior = AsyncResult.isSuccess(preferencesResult)
+  const preferredActiveTurnMessageBehavior = AsyncResult.isSuccess(preferencesResult)
     ? (preferencesResult.value.activeTurnMessageBehavior ?? DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR)
     : DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR;
 
@@ -108,6 +114,20 @@ export function useThreadComposerState() {
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
+  const providerInstanceId =
+    selectedDraft?.modelSelection?.instanceId ??
+    selectedThread?.session?.providerInstanceId ??
+    selectedThread?.modelSelection.instanceId;
+  const selectedProviderDriver =
+    selectedThreadShell && providerInstanceId
+      ? serverConfigs
+          .get(selectedThreadShell.environmentId)
+          ?.providers.find((provider) => provider.instanceId === providerInstanceId)?.driver
+      : undefined;
+  const activeTurnMessageBehavior = resolveActiveTurnMessageBehavior(
+    preferredActiveTurnMessageBehavior,
+    selectedProviderDriver,
+  );
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   const interactionMode = selectedDraft?.interactionMode ?? selectedThread?.interactionMode ?? null;
 
@@ -163,7 +183,15 @@ export function useThreadComposerState() {
     clearComposerDraftContent(threadKey);
     let sendBehavior;
     try {
-      sendBehavior = await sendBehaviorPromise;
+      const preferredBehavior = await sendBehaviorPromise;
+      const queuedProviderInstanceId: ProviderInstanceId =
+        draft.modelSelection?.instanceId ??
+        thread.session?.providerInstanceId ??
+        thread.modelSelection.instanceId;
+      const queuedProviderDriver = serverConfigs
+        .get(selectedThreadShell.environmentId)
+        ?.providers.find((provider) => provider.instanceId === queuedProviderInstanceId)?.driver;
+      sendBehavior = resolveActiveTurnMessageBehavior(preferredBehavior, queuedProviderDriver);
     } catch (error) {
       void mergeComposerDraftContent(threadKey, { text, attachments: [] });
       appendComposerDraftAttachments(threadKey, attachments);
@@ -201,7 +229,7 @@ export function useThreadComposerState() {
       );
     });
     return messageId;
-  }, [selectedThreadDetail, selectedThreadShell]);
+  }, [selectedThreadDetail, selectedThreadShell, serverConfigs]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {

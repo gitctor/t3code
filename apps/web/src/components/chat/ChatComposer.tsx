@@ -218,7 +218,10 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import {
+  resolveActiveTurnMessageBehavior,
+  type UnifiedSettings,
+} from "@t3tools/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
@@ -884,6 +887,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // disabled.
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
+  const activeTurnMessageBehavior = resolveActiveTurnMessageBehavior(
+    settings.activeTurnMessageBehavior,
+    selectedProvider,
+  );
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
@@ -1197,7 +1204,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
   const isPrimarySendBusy =
-    isSendBusy && !(phase === "running" && settings.activeTurnMessageBehavior === "queue");
+    isSendBusy && !(phase === "running" && activeTurnMessageBehavior === "queue");
   const composerFooterActionLayoutKey = useMemo(() => {
     if (activePendingProgress) {
       return `pending:${activePendingProgress.questionIndex}:${activePendingProgress.isLastQuestion}:${activePendingIsResponding}`;
@@ -1296,7 +1303,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !composerSendState.hasSendableContent;
   const collapsedComposerPrimaryActionLabel =
     phase === "running"
-      ? settings.activeTurnMessageBehavior === "queue"
+      ? activeTurnMessageBehavior === "queue"
         ? "Queue message"
         : "Steer active turn"
       : "Send message";
@@ -2862,7 +2869,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       isPreparingWorktree={false}
                       hasSendableContent={false}
-                      activeTurnMessageBehavior={settings.activeTurnMessageBehavior}
+                      activeTurnMessageBehavior={activeTurnMessageBehavior}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
@@ -3146,7 +3153,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     isPreparingWorktree={false}
                     hasSendableContent={false}
-                    activeTurnMessageBehavior={settings.activeTurnMessageBehavior}
+                    activeTurnMessageBehavior={activeTurnMessageBehavior}
                     preserveComposerFocusOnPointerDown
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
@@ -3275,7 +3282,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
-                  activeTurnMessageBehavior={settings.activeTurnMessageBehavior}
+                  activeTurnMessageBehavior={activeTurnMessageBehavior}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}

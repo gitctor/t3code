@@ -11,7 +11,11 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { CrewId, Crews } from "./orchestrationCrew.ts";
-import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceConfig,
+  ProviderInstanceId,
+} from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -107,6 +111,35 @@ export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationM
 export const ActiveTurnMessageBehavior = Schema.Literals(["steer", "queue"]);
 export type ActiveTurnMessageBehavior = typeof ActiveTurnMessageBehavior.Type;
 export const DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR: ActiveTurnMessageBehavior = "steer";
+
+const ACTIVE_TURN_STEER_DRIVER_KINDS = new Set<ProviderDriverKind>([
+  ProviderDriverKind.make("claudeAgent"),
+  ProviderDriverKind.make("codex"),
+  ProviderDriverKind.make("cursor"),
+  ProviderDriverKind.make("grok"),
+  ProviderDriverKind.make("opencode"),
+]);
+
+/**
+ * Whether this driver can add input to its current provider turn.
+ * Unknown drivers use the safe queue fallback until they declare support.
+ */
+export function providerSupportsActiveTurnSteer(
+  driverKind: ProviderDriverKind | null | undefined,
+): boolean {
+  return driverKind !== null && driverKind !== undefined
+    ? ACTIVE_TURN_STEER_DRIVER_KINDS.has(driverKind)
+    : false;
+}
+
+export function resolveActiveTurnMessageBehavior(
+  preferredBehavior: ActiveTurnMessageBehavior,
+  driverKind: ProviderDriverKind | null | undefined,
+): ActiveTurnMessageBehavior {
+  return preferredBehavior === "steer" && !providerSupportsActiveTurnSteer(driverKind)
+    ? "queue"
+    : preferredBehavior;
+}
 
 /**
  * A user-chosen font family (a single name or a comma-separated list). Empty

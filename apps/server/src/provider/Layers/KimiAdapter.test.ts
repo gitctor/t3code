@@ -164,9 +164,9 @@ it.layer(kimiAdapterTestLayer)("KimiAdapterLive", (it) => {
     }),
   );
 
-  it.effect("steers a running turn through the active ACP session", () =>
+  it.effect("rejects another prompt while the ACP turn is active", () =>
     Effect.gen(function* () {
-      const threadId = ThreadId.make("kimi-steer-thread");
+      const threadId = ThreadId.make("kimi-active-prompt-thread");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockKimiWrapper({ T3_ACP_PROMPT_DELAY_MS: "1500" }),
       );
@@ -200,15 +200,18 @@ it.layer(kimiAdapterTestLayer)("KimiAdapterLive", (it) => {
         .pipe(Effect.forkChild);
       yield* Deferred.await(turnStarted);
 
-      const steeredTurn = yield* adapter.sendTurn({
-        threadId,
-        input: "also verify the dispatch lifecycle",
-      });
+      const error = yield* Effect.flip(
+        adapter.sendTurn({
+          threadId,
+          input: "also verify the dispatch lifecycle",
+        }),
+      );
       const firstTurn = yield* Fiber.join(firstTurnFiber);
       yield* Deferred.await(turnCompleted);
       yield* Fiber.interrupt(runtimeEventsFiber);
 
-      assert.equal(String(steeredTurn.turnId), String(firstTurn.turnId));
+      assert.equal(error._tag, "ProviderAdapterRequestError");
+      assert.include(error.message, "Queue the message until the turn settles");
       const turnEvents = runtimeEvents.filter(
         (event) =>
           event.threadId === threadId &&

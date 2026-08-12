@@ -186,6 +186,7 @@ import {
   useClientSettingsHydrated,
   useEnvironmentSettings,
 } from "../hooks/useSettings";
+import { resolveActiveTurnMessageBehavior } from "@t3tools/contracts/settings";
 import {
   EMPTY_WEB_THREAD_OUTBOX_QUEUE,
   shouldQueueWebThreadMessage,
@@ -4894,8 +4895,12 @@ function ChatViewContent(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    const activeTurnMessageBehavior = resolveActiveTurnMessageBehavior(
+      settings.activeTurnMessageBehavior,
+      composerRef.current?.getSendContext()?.selectedProvider,
+    );
     const shouldQueueCurrentMessage = shouldQueueWebThreadMessage({
-      activeTurnMessageBehavior: settings.activeTurnMessageBehavior,
+      activeTurnMessageBehavior,
       hasQueuedMessages: activeThreadOutboxQueue.length > 0,
       isSendBusy,
       isServerThread,
@@ -5128,7 +5133,7 @@ function ChatViewContent(props: ChatViewProps) {
         modelSelection: ctxSelectedModelSelection,
         runtimeMode,
         interactionMode,
-        activeTurnMessageBehavior: settings.activeTurnMessageBehavior,
+        activeTurnMessageBehavior,
         createdAt,
       });
       setThreadError(threadIdForSend, null);
