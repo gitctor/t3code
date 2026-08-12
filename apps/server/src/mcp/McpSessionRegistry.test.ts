@@ -127,3 +127,26 @@ it.effect("does not keep credentials of other threads alive", () =>
     expect(yield* registry.resolve(token)).toBeUndefined();
   }),
 );
+
+it.effect("changes orchestration access without rotating the provider credential", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("thread-capabilities");
+    const issued = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual(["preview"]);
+
+    yield* registry.setCapabilities(threadId, new Set(["preview", "orchestration"]));
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "preview",
+      "orchestration",
+    ]);
+
+    yield* registry.setCapabilities(threadId, new Set(["preview"]));
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual(["preview"]);
+  }),
+);

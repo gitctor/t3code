@@ -12,6 +12,7 @@
 import {
   ModelSelection,
   NonNegativeInt,
+  EventId,
   ThreadId,
   ProviderInterruptTurnInput,
   ProviderRespondToRequestInput,
@@ -31,6 +32,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
@@ -240,6 +242,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
       Effect.asVoid,
     );
+
+  const publishRuntimeWarning: NonNullable<ProviderServiceMethod<"publishRuntimeWarning">> =
+    Effect.fn("ProviderService.publishRuntimeWarning")(function* (input) {
+      const instanceInfo = yield* registry.getInstanceInfo(input.providerInstanceId);
+      const createdAt = yield* nowIso;
+      const eventId = `crew-warning:${createdAt}:${yield* Random.next}`;
+      yield* publishRuntimeEvent({
+        type: "runtime.warning",
+        eventId: EventId.make(eventId),
+        provider: instanceInfo.driverKind,
+        providerInstanceId: input.providerInstanceId,
+        threadId: input.threadId,
+        createdAt,
+        payload: {
+          message: input.message,
+          ...(input.detail !== undefined ? { detail: input.detail } : {}),
+        },
+      });
+    });
 
   const requireBindingInstanceId = (
     operation: string,
@@ -597,6 +618,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* prepareMcpSession(threadId, resolvedInstanceId);
+        yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
+          threadId,
+          input.crewId === undefined ? new Set(["preview"]) : new Set(["preview", "orchestration"]),
+        );
         const session = yield* adapter
           .startSession({
             ...input,
@@ -732,6 +757,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
+      yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
+        input.threadId,
+        input.crewId === undefined ? new Set(["preview"]) : new Set(["preview", "orchestration"]),
+      );
       const turn = yield* routed.adapter.sendTurn(input);
       yield* directory.upsert({
         threadId: input.threadId,
@@ -1135,6 +1164,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    publishRuntimeWarning,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

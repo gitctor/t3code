@@ -1250,6 +1250,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  crewId: Schema.optional(CrewId),
   createdAt: IsoDateTime,
 });
 

@@ -183,6 +183,7 @@ describe("ProviderSessionReaper", () => {
           },
         });
       },
+      publishRuntimeWarning: () => Effect.void,
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.empty,
     };

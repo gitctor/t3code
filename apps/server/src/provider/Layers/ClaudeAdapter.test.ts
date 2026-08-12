@@ -37,8 +37,27 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  buildClaudeSystemPrompt,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+
+describe("buildClaudeSystemPrompt", () => {
+  it("appends server instructions to the Claude Code system preset", () => {
+    const briefing = '<crew_briefing version="1">\nCrew roster\n</crew_briefing>';
+    assert.deepStrictEqual(buildClaudeSystemPrompt(briefing), {
+      type: "preset",
+      preset: "claude_code",
+      append: briefing,
+    });
+    assert.deepStrictEqual(buildClaudeSystemPrompt(), {
+      type: "preset",
+      preset: "claude_code",
+    });
+  });
+});
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(

@@ -10,6 +10,8 @@ import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/uns
 
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import * as DispatchBroker from "./DispatchBroker.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -50,6 +52,93 @@ it("normalizes empty successful notification responses to accepted", () => {
   );
   expect(resultResponse.status).toBe(200);
 });
+
+it("keeps a crewless session tool list byte-identical to the pre-orchestration list", () => {
+  const previewTools = [
+    { name: "preview_status", inputSchema: { type: "object" } },
+    { name: "preview_open", inputSchema: { type: "object" } },
+  ];
+  const baseline = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: previewTools } });
+  const registered = HttpServerResponse.jsonUnsafe({
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      tools: [
+        ...previewTools,
+        { name: "dispatch", inputSchema: { type: "object" } },
+        { name: "await_dispatch", inputSchema: { type: "object" } },
+        { name: "list_dispatches", inputSchema: { type: "object" } },
+      ],
+    },
+  });
+
+  const filtered = McpHttpServer.filterMcpToolListResponse(registered, new Set(["preview"]));
+  expect(filtered.body._tag).toBe("Uint8Array");
+  if (filtered.body._tag !== "Uint8Array") {
+    throw new Error("Expected a JSON byte body");
+  }
+  expect(new TextDecoder().decode(filtered.body.body)).toBe(baseline);
+
+  expect(
+    McpHttpServer.filterMcpToolListResponse(registered, new Set(["preview", "orchestration"])),
+  ).toBe(registered);
+});
+
+it.effect("hides orchestration tools on the authenticated crewless HTTP session", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: (token) => Effect.succeed(token === "crewless" ? invocation : undefined),
+        touch: () => Effect.void,
+        setCapabilities: () => Effect.void,
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const serverLayer = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
+        Layer.provide(DispatchBroker.layer),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+      );
+      yield* HttpRouter.serve(serverLayer, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+      const headers = {
+        accept: "application/json, text/event-stream",
+        authorization: "Bearer crewless",
+      };
+      const initializeResponse = yield* httpClient.post("/mcp", {
+        headers,
+        body: HttpBody.text(
+          `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-test","version":"1.0.0"}}}`,
+          "application/json",
+        ),
+      });
+      const sessionId = initializeResponse.headers["mcp-session-id"];
+      expect(sessionId).not.toBeUndefined();
+
+      const listResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          ...headers,
+          "mcp-session-id": sessionId!,
+          "mcp-protocol-version": "2025-06-18",
+        },
+        body: HttpBody.text(
+          `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+          "application/json",
+        ),
+      });
+      const body = yield* listResponse.text;
+      expect(body).toContain("preview_status");
+      expect(body).not.toContain('"name":"dispatch"');
+      expect(body).not.toContain('"name":"await_dispatch"');
+      expect(body).not.toContain('"name":"list_dispatches"');
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
 
 it.effect("returns bounded structural preview snapshot failures", () =>
   Effect.scoped(

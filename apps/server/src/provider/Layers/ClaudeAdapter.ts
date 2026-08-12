@@ -1174,6 +1174,12 @@ const CLAUDE_SETTING_SOURCES = [
   "local",
 ] as const satisfies ReadonlyArray<SettingSource>;
 
+export function buildClaudeSystemPrompt(additionalInstructions?: string) {
+  return additionalInstructions
+    ? { type: "preset" as const, preset: "claude_code" as const, append: additionalInstructions }
+    : { type: "preset" as const, preset: "claude_code" as const };
+}
+
 function buildPromptText(
   input: ProviderSendTurnInput,
   boundInstanceId: ProviderInstanceId,
@@ -4102,7 +4108,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: buildClaudeSystemPrompt(input.additionalInstructions),
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.

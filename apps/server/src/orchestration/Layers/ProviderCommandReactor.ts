@@ -1,7 +1,9 @@
 import {
   type ChatAttachment,
   CommandId,
+  type CrewId,
   EventId,
+  isRunnableCrew,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -45,6 +47,8 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { buildCrewBriefing } from "../CrewBriefing.ts";
+import { CrewRegistry } from "../Services/CrewRegistry.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -315,6 +319,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const crewRegistry = yield* CrewRegistry;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
@@ -337,6 +342,7 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
+  const threadAdditionalInstructions = new Map<string, string | undefined>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -484,6 +490,8 @@ const make = Effect.gen(function* () {
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly crewId?: CrewId;
+      readonly additionalInstructions?: string;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -628,6 +636,10 @@ const make = Effect.gen(function* () {
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         modelSelection: desiredModelSelection,
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+        ...(options?.crewId !== undefined ? { crewId: options.crewId } : {}),
+        ...(options?.additionalInstructions !== undefined
+          ? { additionalInstructions: options.additionalInstructions }
+          : {}),
         runtimeMode: desiredRuntimeMode,
       });
 
@@ -679,14 +691,20 @@ const make = Effect.gen(function* () {
         preferredProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
         !Equal.equals(previousModelSelection, requestedModelSelection);
+      const previousAdditionalInstructions = threadAdditionalInstructions.get(threadId);
+      const shouldRestartForInstructionsChange =
+        preferredProvider === "claudeAgent" &&
+        previousAdditionalInstructions !== options?.additionalInstructions;
 
       if (
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
         !shouldRestartForModelChange &&
-        !shouldRestartForModelSelectionChange
+        !shouldRestartForModelSelectionChange &&
+        !shouldRestartForInstructionsChange
       ) {
+        threadAdditionalInstructions.set(threadId, options?.additionalInstructions);
         return existingSessionThreadId;
       }
 
@@ -710,6 +728,7 @@ const make = Effect.gen(function* () {
         instanceChanged,
         shouldRestartForModelChange,
         shouldRestartForModelSelectionChange,
+        shouldRestartForInstructionsChange,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession(
@@ -724,11 +743,13 @@ const make = Effect.gen(function* () {
         cwd: restartedSession.cwd,
       });
       yield* bindSessionToThread(restartedSession);
+      threadAdditionalInstructions.set(threadId, options?.additionalInstructions);
       return restartedSession.threadId;
     }
 
     const startedSession = yield* startProviderSession(undefined);
     yield* bindSessionToThread(startedSession);
+    threadAdditionalInstructions.set(threadId, options?.additionalInstructions);
     return startedSession.threadId;
   });
 
@@ -738,6 +759,8 @@ const make = Effect.gen(function* () {
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
+    readonly crewId?: CrewId;
+    readonly additionalInstructions?: string;
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThread(input.threadId);
@@ -749,6 +772,10 @@ const make = Effect.gen(function* () {
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
+      ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
+      ...(input.additionalInstructions !== undefined
+        ? { additionalInstructions: input.additionalInstructions }
+        : {}),
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
@@ -789,6 +816,37 @@ const make = Effect.gen(function* () {
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+      ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
+      ...(input.additionalInstructions !== undefined
+        ? { additionalInstructions: input.additionalInstructions }
+        : {}),
+    };
+  });
+
+  const resolveCrewTurnContext = Effect.fn("resolveCrewTurnContext")(function* (input: {
+    readonly crewId: CrewId | undefined;
+    readonly threadId: ThreadId;
+    readonly providerInstanceId: ModelSelection["instanceId"];
+  }) {
+    if (input.crewId === undefined) {
+      return undefined;
+    }
+    const entry = yield* crewRegistry.resolve(input.crewId);
+    if (entry === undefined || !isRunnableCrew(entry.resolvedCrew)) {
+      yield* providerService.publishRuntimeWarning({
+        threadId: input.threadId,
+        providerInstanceId: input.providerInstanceId,
+        message: `Crew '${input.crewId}' is unavailable. Continuing without crew tools.`,
+        detail: {
+          crewId: input.crewId,
+          reason: entry?.resolvedCrew.unavailableReason ?? "crew-not-found",
+        },
+      });
+      return undefined;
+    }
+    return {
+      crewId: input.crewId,
+      additionalInstructions: buildCrewBriefing(entry),
     };
   });
 
@@ -1161,6 +1219,12 @@ const make = Effect.gen(function* () {
         ),
       );
 
+    const crewTurnContext = yield* resolveCrewTurnContext({
+      crewId: event.payload.crewId,
+      threadId: event.payload.threadId,
+      providerInstanceId:
+        event.payload.modelSelection?.instanceId ?? thread.modelSelection.instanceId,
+    });
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageText: message.text,
@@ -1169,6 +1233,7 @@ const make = Effect.gen(function* () {
         ? { modelSelection: event.payload.modelSelection }
         : {}),
       interactionMode: event.payload.interactionMode,
+      ...(crewTurnContext ?? {}),
       createdAt: event.payload.createdAt,
     }).pipe(
       Effect.map(Option.some),

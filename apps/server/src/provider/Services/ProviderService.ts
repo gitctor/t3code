@@ -97,6 +97,13 @@ export interface ProviderServiceShape {
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
 
+  readonly publishRuntimeWarning: (input: {
+    readonly threadId: ThreadId;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly message: string;
+    readonly detail?: unknown;
+  }) => Effect.Effect<void, ProviderServiceError>;
+
   /**
    * Roll back provider conversation state by a number of turns.
    */

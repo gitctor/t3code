@@ -269,6 +269,17 @@ describe("buildCodexDeveloperInstructions", () => {
     NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
   });
 
+  it("appends server instructions without changing their content", () => {
+    const briefing = '<crew_briefing version="1">\nCrew roster\n</crew_briefing>';
+    const instructions = buildCodexDeveloperInstructions("default", {
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      additionalInstructions: briefing,
+    });
+
+    NodeAssert.ok(instructions.endsWith(briefing));
+  });
+
   it("varies with the model and effort of each turn", () => {
     const first = buildCodexDeveloperInstructions("default", {
       model: "gpt-5.3-codex",

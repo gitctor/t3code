@@ -3,11 +3,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -65,6 +66,62 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
+const ORCHESTRATION_TOOL_NAMES = new Set(["dispatch", "await_dispatch", "list_dispatches"]);
+
+const filterOrchestrationTools = (payload: unknown): unknown => {
+  if (Array.isArray(payload)) {
+    return payload.map(filterOrchestrationTools);
+  }
+  if (!Predicate.isObject(payload) || !Predicate.isObject(payload.result)) {
+    return payload;
+  }
+  const tools = payload.result.tools;
+  if (!Array.isArray(tools)) {
+    return payload;
+  }
+  const filtered = tools.filter(
+    (tool) =>
+      !Predicate.isObject(tool) ||
+      typeof tool.name !== "string" ||
+      !ORCHESTRATION_TOOL_NAMES.has(tool.name),
+  );
+  return filtered.length === tools.length
+    ? payload
+    : {
+        ...payload,
+        result: {
+          ...payload.result,
+          tools: filtered,
+        },
+      };
+};
+
+export const filterMcpToolListResponse = (
+  response: HttpServerResponse.HttpServerResponse,
+  capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
+): HttpServerResponse.HttpServerResponse => {
+  if (capabilities.has("orchestration") || response.body._tag !== "Uint8Array") {
+    return response;
+  }
+  const body = response.body;
+  if (!body.contentType.endsWith("json")) {
+    return response;
+  }
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(body.body)) as unknown;
+    const filtered = filterOrchestrationTools(decoded);
+    if (filtered === decoded) {
+      return response;
+    }
+    return HttpServerResponse.setBody(
+      response,
+      HttpBody.uint8Array(new TextEncoder().encode(JSON.stringify(filtered)), body.contentType),
+    );
+  } catch {
+    return response;
+  }
+};
+
 const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
   Effect.map(
     (registry): McpAuthMiddleware =>
@@ -88,6 +145,7 @@ const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
         return yield* httpEffect.pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.map(normalizeMcpHttpResponse),
+          Effect.map((response) => filterMcpToolListResponse(response, invocation.capabilities)),
         );
       }),
   ),

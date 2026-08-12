@@ -124,6 +124,7 @@ function createProviderServiceHarness(
           continuationKey: `${providerName}:instance:${instanceId}`,
         },
       }),
+    publishRuntimeWarning: () => Effect.void,
     rollbackConversation,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);

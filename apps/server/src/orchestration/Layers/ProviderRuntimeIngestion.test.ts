@@ -123,6 +123,7 @@ function createProviderServiceHarness() {
         },
       });
     },
+    publishRuntimeWarning: () => Effect.void,
     rollbackConversation: () => unsupported(),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);

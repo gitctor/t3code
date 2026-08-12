@@ -151,6 +151,7 @@ ${T3_CODE_BROWSER_TOOL_INSTRUCTIONS}
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
+  readonly additionalInstructions?: string;
 }
 
 // Values come from trusted config, but keep the block single-line regardless.
@@ -166,7 +167,8 @@ export function buildCodexDeveloperInstructions(
     interactionMode === "plan"
       ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
       : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
+  const runtimeInfo = `<runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
   return `${base}
 
-<runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+${runtimeInfo}${runtime.additionalInstructions ? `\n\n${runtime.additionalInstructions}` : ""}`;
 }

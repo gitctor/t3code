@@ -31,6 +31,10 @@ export interface McpSessionRegistryShape {
    * credential even when it goes a long time without touching an MCP tool.
    */
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly setCapabilities: (
+    threadId: ThreadId,
+    capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
+  ) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeAll: Effect.Effect<void>;
@@ -181,6 +185,27 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     },
   );
 
+  const setCapabilities: McpSessionRegistryShape["setCapabilities"] = Effect.fn(
+    "McpSessionRegistry.setCapabilities",
+  )(function* (threadId, capabilities) {
+    yield* SynchronizedRef.update(state, ({ records }) => ({
+      records: new Map(
+        Array.from(records, ([tokenHash, record]) => [
+          tokenHash,
+          record.scope.threadId === threadId
+            ? {
+                ...record,
+                scope: {
+                  ...record.scope,
+                  capabilities: new Set(capabilities),
+                },
+              }
+            : record,
+        ]),
+      ),
+    }));
+  });
+
   const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
     SynchronizedRef.update(state, ({ records }) => ({
       records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
@@ -190,6 +215,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     issue,
     resolve,
     touch,
+    setCapabilities,
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
         yield* revokeWhere((record) => record.scope.providerSessionId === providerSessionId);
@@ -237,6 +263,14 @@ export const issueActiveMcpCredential = (
  */
 export const touchActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.touch(threadId) : Effect.void;
+
+export const setActiveMcpThreadCapabilities = (
+  threadId: ThreadId,
+  capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
+): Effect.Effect<void> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.setCapabilities(threadId, capabilities)
+    : Effect.void;
 
 export const revokeActiveMcpThread = (threadId: ThreadId): Effect.Effect<void> =>
   activeMcpSessionRegistry ? activeMcpSessionRegistry.revokeThread(threadId) : Effect.void;

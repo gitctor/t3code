@@ -854,6 +854,35 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("publishes unknown crew warnings as provider runtime events", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const warningFiber = yield* Stream.runHead(provider.streamEvents).pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+
+      yield* provider.publishRuntimeWarning({
+        threadId: asThreadId("thread-crew-warning"),
+        providerInstanceId: codexInstanceId,
+        message: "Crew 'missing' is unavailable. Continuing without crew tools.",
+        detail: { crewId: "missing", reason: "crew-not-found" },
+      });
+
+      const warning = Option.getOrThrow(yield* Fiber.join(warningFiber));
+      if (warning.type !== "runtime.warning") {
+        return yield* Effect.die(`Expected runtime.warning, received ${warning.type}`);
+      }
+      assert.equal(warning.providerInstanceId, codexInstanceId);
+      assert.equal(
+        warning.payload.message,
+        "Crew 'missing' is unavailable. Continuing without crew tools.",
+      );
+      assert.deepEqual(warning.payload.detail, {
+        crewId: "missing",
+        reason: "crew-not-found",
+      });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

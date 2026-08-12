@@ -5,10 +5,12 @@ import * as NodePath from "node:path";
 
 import {
   ModelSelection,
+  CrewId,
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ResolvedCrew,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -63,6 +65,8 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import { CrewRegistry } from "../Services/CrewRegistry.ts";
+import { make as makeCrewRegistry } from "./CrewRegistry.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -153,6 +157,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly resolvedCrew?: ResolvedCrew;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -161,6 +166,7 @@ describe("ProviderCommandReactor", () => {
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
+    const runtimeWarnings: Array<Parameters<ProviderServiceShape["publishRuntimeWarning"]>[0]> = [];
     let nextSessionIndex = 1;
     const runtimeSessions: Array<ProviderSession> = [];
     const modelSelection = input?.threadModelSelection ?? {
@@ -339,6 +345,10 @@ describe("ProviderCommandReactor", () => {
           },
         });
       },
+      publishRuntimeWarning: (warning) =>
+        Effect.sync(() => {
+          runtimeWarnings.push(warning);
+        }),
       rollbackConversation: () => unsupported(),
       get streamEvents() {
         return Stream.fromPubSub(runtimeEventPubSub);
@@ -391,6 +401,26 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
+      Layer.provideMerge(
+        Layer.succeed(
+          CrewRegistry,
+          makeCrewRegistry(
+            input?.resolvedCrew
+              ? [
+                  {
+                    resolvedCrew: input.resolvedCrew,
+                    memberDisplayNames: new Map(
+                      input.resolvedCrew.crew.members.map((member) => [
+                        member.instanceId,
+                        String(member.instanceId),
+                      ]),
+                    ),
+                  },
+                ]
+              : [],
+          ),
+        ),
+      ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -503,6 +533,7 @@ describe("ProviderCommandReactor", () => {
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
+      runtimeWarnings,
       stateDir,
       drain,
       runEffect,
@@ -550,6 +581,92 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("continues without crew tools and publishes a warning for an unknown crew", async () => {
+    const harness = await createHarness();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-unknown-crew"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-unknown-crew"),
+          role: "user",
+          text: "Plan this",
+          attachments: [],
+        },
+        crewId: CrewId.make("missing_crew"),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await harness.drain();
+
+    expect(harness.sendTurn).toHaveBeenCalledOnce();
+    expect(harness.sendTurn.mock.calls[0]?.[0]).not.toHaveProperty("crewId");
+    expect(harness.sendTurn.mock.calls[0]?.[0]).not.toHaveProperty("additionalInstructions");
+    expect(harness.runtimeWarnings).toEqual([
+      expect.objectContaining({
+        threadId: ThreadId.make("thread-1"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        message: "Crew 'missing_crew' is unavailable. Continuing without crew tools.",
+      }),
+    ]);
+  });
+
+  it("passes one shared briefing through session start and planner turn delivery", async () => {
+    const codex = ProviderInstanceId.make("codex");
+    const claude = ProviderInstanceId.make("claude");
+    const crewId = CrewId.make("deep_build");
+    const harness = await createHarness({
+      resolvedCrew: {
+        crew: {
+          id: crewId,
+          name: "Deep Build",
+          planner: { instanceId: codex, model: "gpt-5-codex" },
+          members: [{ instanceId: claude, model: "claude-opus-5", role: "build" }],
+        },
+        plannerAvailable: true,
+        availableMemberIds: [claude],
+      },
+    });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-runnable-crew"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-runnable-crew"),
+          role: "user",
+          text: "Plan this",
+          attachments: [],
+        },
+        crewId,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await harness.drain();
+
+    const sessionInput = harness.startSession.mock.calls[0]?.[1] as {
+      readonly crewId?: CrewId;
+      readonly additionalInstructions?: string;
+    };
+    const turnInput = harness.sendTurn.mock.calls[0]?.[0] as {
+      readonly crewId?: CrewId;
+      readonly additionalInstructions?: string;
+    };
+    expect(turnInput.crewId).toBe(crewId);
+    expect(sessionInput.crewId).toBe(crewId);
+    expect(turnInput.additionalInstructions).toBe(sessionInput.additionalInstructions);
+    expect(turnInput.additionalInstructions).toContain("Crew: Deep Build (deep_build)");
+    expect(turnInput.additionalInstructions).toContain("instanceId: claude");
+    expect(harness.runtimeWarnings).toEqual([]);
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>
