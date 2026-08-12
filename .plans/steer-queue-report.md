@@ -18,17 +18,17 @@ The integration started from fork commit `8de4c7ad6`. The branch also contained 
 | `cbd462f76` | `bd40aed88` | Adapted review fixes to the fork's current composer and preference code. |
 | `508098f4e` | `329a3f9d3` | Adapted queue hardening. Preserved crew-aware Codex turn input, including additional planner instructions. |
 | `784345965` | `5667ee838` | Applied tagged Effect recovery for rejected Codex steers. |
-| `2137c622a` | `573f23c12` | Applied the upstream web queue edge-case fix without source changes. |
-| `a404f29a9` | `4d5187868` | Applied the upstream late-steer and reconnect race fix without source changes. |
-| `ee263e222` | `618973741` | Adapted the final Codex reconciliation patch onto the fork's provider runtime. |
+| `2137c622a` | `e6a4b6dfd` | Applied the upstream web queue edge-case fix without source changes. |
+| `a404f29a9` | `c9ca5527b` | Applied the upstream late-steer and reconnect race fix without source changes. |
+| `ee263e222` | `1e7592bdc` | Adapted the final Codex reconciliation patch onto the fork's provider runtime. |
 
 Fork-only follow-ups:
 
-- `a03ca4cbe` removes a duplicate send-button declaration created by the composer conflict. It preserves the fork's stage artwork and the Stop plus Steer/Queue layout.
-- `b3ee9c2af` rejects incomplete `localStorage` implementations and falls back to in-memory outbox storage.
-- `e016517e2` verifies that Stop remains beside both active-turn send actions.
-- `15a701806` initially tested overlapping Kimi prompts against the generic mock ACP agent. That mock did not model Kimi's single mutable turn state.
-- `5b335ab42` replaces that unsafe assumption with an explicit Kimi and unknown-provider Queue fallback. It also adds direct Grok steering coverage.
+- `ed66d8381` removes a duplicate send-button declaration created by the composer conflict. It preserves the fork's stage artwork and the Stop plus Steer/Queue layout.
+- `b4d169ca2` rejects incomplete `localStorage` implementations and falls back to in-memory outbox storage.
+- `249a4d3d9` verifies that Stop remains beside both active-turn send actions.
+- `7ca914428` initially tested overlapping Kimi prompts against the generic mock ACP agent. That mock did not model Kimi's single mutable turn state.
+- `4ef42cdee` replaces that unsafe assumption with an explicit Kimi and unknown-provider Queue fallback. It also adds direct Grok steering coverage.
 
 Original PR author ClapFy is preserved as author and credited with `Co-authored-by` on adapted commits.
 
