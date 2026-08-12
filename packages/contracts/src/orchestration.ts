@@ -21,8 +21,8 @@ import {
   TrimmedString,
   TurnId,
 } from "./baseSchemas.ts";
-import { ProviderInstanceId } from "./providerInstance.ts";
-import { CrewId } from "./orchestrationCrew.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { CrewId, DispatchRecord } from "./orchestrationCrew.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -1017,6 +1017,28 @@ const ThreadActivityAppendCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadSystemMessageAppendCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.system.append"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: TrimmedNonEmptyString,
+  turnId: Schema.NullOr(TurnId),
+  createdAt: IsoDateTime,
+});
+
+const ThreadDispatchUpsertCommand = Schema.Struct({
+  type: Schema.Literal("thread.dispatch.upsert"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  dispatch: DispatchRecord,
+  title: TrimmedNonEmptyString,
+  provider: ProviderDriverKind,
+  effort: Schema.optionalKey(TrimmedNonEmptyString),
+  summary: Schema.optionalKey(Schema.String),
+  createdAt: IsoDateTime,
+});
+
 const ThreadRevertCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.revert.complete"),
   commandId: CommandId,
@@ -1040,6 +1062,8 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
+  ThreadSystemMessageAppendCommand,
+  ThreadDispatchUpsertCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
 ]);
@@ -1081,6 +1105,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "thread.dispatch-upserted",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
@@ -1316,6 +1341,15 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export const ThreadDispatchUpsertedPayload = Schema.Struct({
+  threadId: ThreadId,
+  dispatch: DispatchRecord,
+  title: TrimmedNonEmptyString,
+  provider: ProviderDriverKind,
+  effort: Schema.optionalKey(TrimmedNonEmptyString),
+  summary: Schema.optionalKey(Schema.String),
+});
+
 export const OrchestrationEventMetadata = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
@@ -1482,6 +1516,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.dispatch-upserted"),
+    payload: ThreadDispatchUpsertedPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
