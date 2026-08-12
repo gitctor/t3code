@@ -15,7 +15,12 @@ import type {
   AccountLimitsWindow,
   UsageProviderKind,
 } from "@t3tools/contracts";
-import { formatAgo, formatResetAt, formatResetIn } from "@t3tools/shared/limitsFormat";
+import {
+  formatAgo,
+  formatResetAt,
+  formatResetIn,
+  formatSidebarResetAt,
+} from "@t3tools/shared/limitsFormat";
 import { useEffect, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -51,20 +56,6 @@ function remainingTone(usedPercent: number): string {
   return "text-sidebar-foreground/70";
 }
 
-const sidebarResetFormatter = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-function formatSidebarReset(resetsAt: string | null): string {
-  if (resetsAt === null) return "Reset time unavailable";
-  const reset = new Date(resetsAt);
-  if (Number.isNaN(reset.getTime())) return "Reset time unavailable";
-  return `Resets ${sidebarResetFormatter.format(reset)}`;
-}
-
 function compactWindowLabel(window: AccountLimitsWindow): string {
   if (window.windowMinutes === null) return window.label;
   if (window.windowMinutes % 1_440 === 0) return `${window.windowMinutes / 1_440}d`;
@@ -98,22 +89,32 @@ function SnapshotAge({ snapshot, nowMs }: { snapshot: AccountLimitsSnapshot; now
 /** Always-visible remaining capacity beside the sidebar's Usage label. */
 export function AccountLimitsSidebarGauges() {
   const { snapshots } = useAccountLimits();
+  const nowMs = useNowMs();
 
   return (
     <span className="ml-auto flex shrink-0 items-center gap-1.5 group-data-[collapsible=icon]:hidden">
       {PROVIDER_ORDER.map((provider) => {
         const snapshot = snapshots.get(provider);
         if (snapshot === undefined || snapshot.windows.length === 0) return null;
-        return <AccountLimitsSidebarGauge key={provider} provider={provider} snapshot={snapshot} />;
+        return (
+          <AccountLimitsSidebarGauge
+            key={provider}
+            nowMs={nowMs}
+            provider={provider}
+            snapshot={snapshot}
+          />
+        );
       })}
     </span>
   );
 }
 
 function AccountLimitsSidebarGauge({
+  nowMs,
   provider,
   snapshot,
 }: {
+  nowMs: number;
   provider: UsageProviderKind;
   snapshot: AccountLimitsSnapshot;
 }) {
@@ -153,18 +154,20 @@ function AccountLimitsSidebarGauge({
                   stroke="currentColor"
                   strokeWidth="2"
                 />
-                <circle
-                  className={remainingTone(window.usedPercent)}
-                  cx="16"
-                  cy="16"
-                  fill="none"
-                  pathLength="100"
-                  r={radius}
-                  stroke="currentColor"
-                  strokeDasharray={`${remainingPercent} ${100 - remainingPercent}`}
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                />
+                {remainingPercent > 0 ? (
+                  <circle
+                    className={remainingTone(window.usedPercent)}
+                    cx="16"
+                    cy="16"
+                    fill="none"
+                    pathLength="100"
+                    r={radius}
+                    stroke="currentColor"
+                    strokeDasharray={`${remainingPercent} ${100 - remainingPercent}`}
+                    strokeLinecap="round"
+                    strokeWidth="2"
+                  />
+                ) : null}
               </g>
             );
           })}
@@ -180,10 +183,10 @@ function AccountLimitsSidebarGauge({
                 {index === 0 ? "Outer" : "Inner"} · {compactWindowLabel(window)}
               </span>
               <span className={cn("font-medium tabular-nums", remainingTone(window.usedPercent))}>
-                {Math.round(100 - window.usedPercent)}%
+                {Math.round(100 - window.usedPercent)}% remaining
               </span>
               <span className="col-span-2 text-[10px] text-muted-foreground/80">
-                {formatSidebarReset(window.resetsAt)}
+                {formatSidebarResetAt(window.resetsAt, nowMs)}
               </span>
             </div>
           ))}
