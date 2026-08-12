@@ -77,8 +77,7 @@ function SnapshotAge({ snapshot, nowMs }: { snapshot: AccountLimitsSnapshot; now
 
 /** Always-visible remaining capacity beside the sidebar's Usage label. */
 export function AccountLimitsSidebarGauges() {
-  const { snapshots } = useAccountLimits();
-  const nowMs = Date.now();
+  const { readAtMs, snapshots } = useAccountLimits();
 
   return (
     <span className="ml-auto flex shrink-0 items-center gap-1.5 group-data-[collapsible=icon]:hidden">
@@ -88,7 +87,7 @@ export function AccountLimitsSidebarGauges() {
         return (
           <AccountLimitsSidebarGauge
             key={provider}
-            nowMs={nowMs}
+            nowMs={readAtMs}
             provider={provider}
             snapshot={snapshot}
           />
@@ -191,8 +190,7 @@ function AccountLimitsSidebarGauge({
 
 /** Compact per-provider availability, shown on hovering the Usage button. */
 export function AccountLimitsHoverCard() {
-  const { snapshots, isPending, isSettling } = useAccountLimits();
-  const nowMs = Date.now();
+  const { snapshots, isPending, isSettling, readAtMs } = useAccountLimits();
 
   if (isPending && snapshots.size === 0) {
     return <p className="px-1 py-2 text-xs text-muted-foreground">Loading limits…</p>;
@@ -211,7 +209,9 @@ export function AccountLimitsHoverCard() {
                 {ACCOUNT_LIMIT_PROVIDER_LABEL[provider]}
               </span>
               <span className="ml-auto">
-                {snapshot !== undefined ? <SnapshotAge snapshot={snapshot} nowMs={nowMs} /> : null}
+                {snapshot !== undefined ? (
+                  <SnapshotAge snapshot={snapshot} nowMs={readAtMs} />
+                ) : null}
               </span>
             </div>
             {snapshot === undefined || snapshot.windows.length === 0 ? (
@@ -238,7 +238,7 @@ export function AccountLimitsHoverCard() {
                     {Math.round(window.usedPercent)}% used
                   </span>
                   <span className="shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-muted-foreground">
-                    {formatResetAt(window.resetsAt, nowMs) ?? ""}
+                    {formatResetAt(window.resetsAt, readAtMs) ?? ""}
                   </span>
                 </div>
               ))
@@ -256,8 +256,7 @@ export function AccountLimitsHoverCard() {
 
 /** The "Limits" strip above the analytics: one column per provider. */
 export function AccountLimitsSection() {
-  const { snapshots, isSettling } = useAccountLimits();
-  const nowMs = Date.now();
+  const { snapshots, isSettling, readAtMs } = useAccountLimits();
 
   return (
     <section className="flex flex-col gap-3">
@@ -275,7 +274,7 @@ export function AccountLimitsSection() {
                 </span>
                 <span className="ml-auto">
                   {snapshot !== undefined ? (
-                    <SnapshotAge snapshot={snapshot} nowMs={nowMs} />
+                    <SnapshotAge snapshot={snapshot} nowMs={readAtMs} />
                   ) : null}
                 </span>
               </div>
@@ -289,7 +288,7 @@ export function AccountLimitsSection() {
                 </p>
               ) : (
                 snapshot.windows.map((window) => {
-                  const resetAt = formatResetAt(window.resetsAt, nowMs);
+                  const resetAt = formatResetAt(window.resetsAt, readAtMs);
                   return (
                     <div key={window.id} className="flex items-center gap-3">
                       <span className="w-10 shrink-0 text-xs text-muted-foreground">

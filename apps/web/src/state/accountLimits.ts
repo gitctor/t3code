@@ -25,6 +25,7 @@ import { serverEnvironment } from "./server";
 interface EnvironmentLimitsStatus {
   readonly environmentId: EnvironmentId;
   readonly isPending: boolean;
+  readonly readAt: string | null;
   readonly snapshots: readonly AccountLimitsSnapshot[] | null;
 }
 
@@ -34,13 +35,15 @@ const accountLimitsAtom = Atom.make((get): readonly EnvironmentLimitsStatus[] =>
   for (const [environmentId] of presentations) {
     const result = get(serverEnvironment.accountLimits({ environmentId, input: {} }));
     const summary = Option.getOrNull(AsyncResult.value(result));
+    const validSummary =
+      summary !== null && summary.contractVersion === ACCOUNT_LIMITS_CONTRACT_VERSION
+        ? summary
+        : null;
     statuses.push({
       environmentId,
       isPending: result.waiting,
-      snapshots:
-        summary === null || summary.contractVersion !== ACCOUNT_LIMITS_CONTRACT_VERSION
-          ? null
-          : summary.snapshots,
+      readAt: validSummary?.readAt ?? null,
+      snapshots: validSummary?.snapshots ?? null,
     });
   }
   return statuses;
@@ -57,6 +60,8 @@ export interface AccountLimitsView {
    * the first environment to answer must not decide that for the rest.
    */
   readonly isSettling: boolean;
+  /** Latest server read time, used for static reset and freshness labels. */
+  readonly readAtMs: number;
   readonly refresh: () => void;
 }
 
@@ -77,6 +82,12 @@ export function useAccountLimits(): AccountLimitsView {
     return freshest;
   }, [environments]);
 
+  const readAtMs = environments.reduce((latest, environment) => {
+    if (environment.readAt === null) return latest;
+    const parsed = Date.parse(environment.readAt);
+    return Number.isFinite(parsed) ? Math.max(latest, parsed) : latest;
+  }, 0);
+
   const refresh = useCallback(() => {
     for (const environment of environments) {
       appAtomRegistry.refresh(
@@ -94,6 +105,7 @@ export function useAccountLimits(): AccountLimitsView {
     snapshots,
     isPending: answered === 0 && stillReporting > 0,
     isSettling: stillReporting > 0,
+    readAtMs,
     refresh,
   };
 }
