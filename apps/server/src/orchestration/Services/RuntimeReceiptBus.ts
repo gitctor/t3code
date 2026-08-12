@@ -8,16 +8,25 @@
  * wait for those exact points without inferring them indirectly from persisted
  * state.
  *
- * Production code should only call `publish`. Test code may subscribe via
- * `streamEventsForTest`, which is intentionally named to make the intended
- * usage explicit.
+ * Reactors may consume `streamEvents` for queue-backed coordination. Test code
+ * may subscribe via `streamEventsForTest`, which keeps the test intent clear.
  *
  * @module RuntimeReceiptBus
  */
-import { CheckpointRef, IsoDateTime, NonNegativeInt, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  DispatchId,
+  DispatchStatus,
+  IsoDateTime,
+  NonNegativeInt,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as PubSub from "effect/PubSub";
+import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
 export const CheckpointBaselineCapturedReceipt = Schema.Struct({
@@ -49,15 +58,35 @@ export const TurnProcessingQuiescedReceipt = Schema.Struct({
 });
 export type TurnProcessingQuiescedReceipt = typeof TurnProcessingQuiescedReceipt.Type;
 
+export const DispatchLifecycleReceipt = Schema.Struct({
+  type: Schema.Literal("dispatch.lifecycle"),
+  dispatchId: DispatchId,
+  parentThreadId: ThreadId,
+  parentTurnId: TurnId,
+  childThreadId: Schema.optionalKey(ThreadId),
+  status: DispatchStatus,
+  summary: Schema.optionalKey(Schema.String),
+  reason: Schema.optionalKey(Schema.String),
+  createdAt: IsoDateTime,
+});
+export type DispatchLifecycleReceipt = typeof DispatchLifecycleReceipt.Type;
+
 export const OrchestrationRuntimeReceipt = Schema.Union([
   CheckpointBaselineCapturedReceipt,
   CheckpointDiffFinalizedReceipt,
   TurnProcessingQuiescedReceipt,
+  DispatchLifecycleReceipt,
 ]);
 export type OrchestrationRuntimeReceipt = typeof OrchestrationRuntimeReceipt.Type;
 
 export interface RuntimeReceiptBusShape {
   readonly publish: (receipt: OrchestrationRuntimeReceipt) => Effect.Effect<void>;
+  readonly subscribe: Effect.Effect<
+    PubSub.Subscription<OrchestrationRuntimeReceipt>,
+    never,
+    Scope.Scope
+  >;
+  readonly streamEvents: Stream.Stream<OrchestrationRuntimeReceipt>;
   readonly streamEventsForTest: Stream.Stream<OrchestrationRuntimeReceipt>;
 }
 

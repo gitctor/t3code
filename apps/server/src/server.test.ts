@@ -102,6 +102,7 @@ const collectQueueUntil = Effect.fn("TransferBudget.collectQueueUntil")(function
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import { makeRoutesLayer } from "./server.ts";
+import * as DispatchBroker from "./mcp/DispatchBroker.ts";
 import { isThreadDetailEvent, resolveAvailableEditorsForConfig } from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -616,14 +617,17 @@ const buildAppUnderTest = (options?: {
       },
     ).pipe(
       Layer.provide(
-        Layer.mock(Keybindings.Keybindings)({
-          loadConfigState: Effect.succeed({
-            keybindings: [],
-            issues: [],
+        Layer.mergeAll(
+          DispatchBroker.unavailableLayer,
+          Layer.mock(Keybindings.Keybindings)({
+            loadConfigState: Effect.succeed({
+              keybindings: [],
+              issues: [],
+            }),
+            streamChanges: Stream.empty,
+            ...options?.layers?.keybindings,
           }),
-          streamChanges: Stream.empty,
-          ...options?.layers?.keybindings,
-        }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ProviderRegistry.ProviderRegistry)({

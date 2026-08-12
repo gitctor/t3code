@@ -98,7 +98,7 @@ it.effect("hides orchestration tools on the authenticated crewless HTTP session"
       });
       const serverLayer = McpHttpServer.layer.pipe(
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
-        Layer.provide(DispatchBroker.layer),
+        Layer.provide(DispatchBroker.unavailableLayer),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
       );
       yield* HttpRouter.serve(serverLayer, {

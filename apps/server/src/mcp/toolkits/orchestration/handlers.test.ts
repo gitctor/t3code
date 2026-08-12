@@ -30,7 +30,7 @@ const client = McpSchema.McpServerClient.of({
 
 const TestLayer = McpHttpServer.OrchestrationToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provide(DispatchBroker.layer),
+  Layer.provide(DispatchBroker.unavailableLayer),
 );
 
 it.effect("registers the orchestration toolkit with the required annotations", () =>

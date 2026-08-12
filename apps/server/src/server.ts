@@ -59,6 +59,7 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CrewRegistryLive } from "./orchestration/Layers/CrewRegistry.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
+import { DispatchReactorLive } from "./orchestration/Layers/DispatchReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
@@ -244,6 +245,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
+  Layer.provideMerge(DispatchReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -368,7 +370,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeCoreDependenciesBaseLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
@@ -413,6 +415,10 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
       CloudManagedEndpointRuntimeLive,
     ),
   ),
+);
+
+const RuntimeCoreDependenciesLive = DispatchBroker.layer.pipe(
+  Layer.provideMerge(RuntimeCoreDependenciesBaseLive),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
@@ -462,7 +468,6 @@ export const makeRoutesLayer = Layer.mergeAll(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
-  Layer.provide(DispatchBroker.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
