@@ -20,7 +20,15 @@ import { formatAgo, formatResetAt, formatSidebarResetAt } from "@t3tools/shared/
 import { cn } from "../../lib/utils";
 import { useAccountLimits } from "../../state/accountLimits";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
+import {
+  ACCOUNT_LIMIT_PROVIDER_COLOR,
+  ACCOUNT_LIMIT_PROVIDER_LABEL,
+  ACCOUNT_LIMIT_PROVIDER_MARK,
+  ACCOUNT_LIMIT_PROVIDER_ORDER,
+  PROVIDER_LABEL,
+  PROVIDER_MARK,
+  PROVIDER_ORDER,
+} from "./usageProviders";
 
 /** Age past which a snapshot stops being "current" and earns a caption. */
 const STALE_AFTER_MS = 15 * 60_000;
@@ -192,15 +200,15 @@ export function AccountLimitsHoverCard() {
 
   return (
     <div className="flex w-64 flex-col gap-2.5 p-1.5">
-      {PROVIDER_ORDER.map((provider) => {
-        const snapshot = snapshots.get(provider);
-        const Mark = PROVIDER_MARK[provider];
+      {ACCOUNT_LIMIT_PROVIDER_ORDER.map((provider) => {
+        const snapshot = provider === "kimi" ? undefined : snapshots.get(provider);
+        const Mark = ACCOUNT_LIMIT_PROVIDER_MARK[provider];
         return (
           <div key={provider} className="flex flex-col gap-1">
             <div className="flex items-baseline gap-1.5">
               <Mark className="size-3 shrink-0 self-center" />
               <span className="text-xs font-medium text-foreground">
-                {PROVIDER_LABEL[provider]}
+                {ACCOUNT_LIMIT_PROVIDER_LABEL[provider]}
               </span>
               <span className="ml-auto">
                 {snapshot !== undefined ? <SnapshotAge snapshot={snapshot} nowMs={nowMs} /> : null}
@@ -208,7 +216,11 @@ export function AccountLimitsHoverCard() {
             </div>
             {snapshot === undefined || snapshot.windows.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
-                {snapshot === undefined && isSettling ? "Loading…" : "No limit data yet"}
+                {provider === "kimi"
+                  ? "Limits not reported by provider."
+                  : snapshot === undefined && isSettling
+                    ? "Loading…"
+                    : "No limit data yet"}
               </p>
             ) : (
               snapshot.windows.map((window) => (
@@ -216,7 +228,7 @@ export function AccountLimitsHoverCard() {
                   <span className="w-9 shrink-0 text-[10px] text-muted-foreground">
                     {window.label}
                   </span>
-                  <LimitMeter window={window} color={PROVIDER_COLOR[provider]} />
+                  <LimitMeter window={window} color={ACCOUNT_LIMIT_PROVIDER_COLOR[provider]} />
                   <span
                     className={cn(
                       "shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-foreground",
@@ -250,16 +262,16 @@ export function AccountLimitsSection() {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-sm font-medium text-foreground">Limits</h2>
-      <div className="grid gap-x-12 gap-y-4 sm:grid-cols-2">
-        {PROVIDER_ORDER.map((provider) => {
-          const snapshot = snapshots.get(provider);
-          const Mark = PROVIDER_MARK[provider];
+      <div className="grid gap-x-12 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+        {ACCOUNT_LIMIT_PROVIDER_ORDER.map((provider) => {
+          const snapshot = provider === "kimi" ? undefined : snapshots.get(provider);
+          const Mark = ACCOUNT_LIMIT_PROVIDER_MARK[provider];
           return (
             <div key={provider} className="flex flex-col gap-1.5">
               <div className="flex items-baseline gap-2">
                 <Mark className="size-3.5 shrink-0 self-center" />
                 <span className="text-sm font-medium text-foreground">
-                  {PROVIDER_LABEL[provider]}
+                  {ACCOUNT_LIMIT_PROVIDER_LABEL[provider]}
                 </span>
                 <span className="ml-auto">
                   {snapshot !== undefined ? (
@@ -269,7 +281,11 @@ export function AccountLimitsSection() {
               </div>
               {snapshot === undefined || snapshot.windows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {snapshot === undefined && isSettling ? "Loading…" : "No limit data yet"}
+                  {provider === "kimi"
+                    ? "Limits not reported by provider."
+                    : snapshot === undefined && isSettling
+                      ? "Loading…"
+                      : "No limit data yet"}
                 </p>
               ) : (
                 snapshot.windows.map((window) => {
@@ -279,7 +295,7 @@ export function AccountLimitsSection() {
                       <span className="w-10 shrink-0 text-xs text-muted-foreground">
                         {window.label}
                       </span>
-                      <LimitMeter window={window} color={PROVIDER_COLOR[provider]} />
+                      <LimitMeter window={window} color={ACCOUNT_LIMIT_PROVIDER_COLOR[provider]} />
                       <span
                         className={cn(
                           "shrink-0 whitespace-nowrap text-right text-xs font-medium tabular-nums text-foreground",
