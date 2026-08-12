@@ -15,13 +15,7 @@ import type {
   AccountLimitsWindow,
   UsageProviderKind,
 } from "@t3tools/contracts";
-import {
-  formatAgo,
-  formatResetAt,
-  formatResetIn,
-  formatSidebarResetAt,
-} from "@t3tools/shared/limitsFormat";
-import { useEffect, useState } from "react";
+import { formatAgo, formatResetAt, formatSidebarResetAt } from "@t3tools/shared/limitsFormat";
 
 import { cn } from "../../lib/utils";
 import { useAccountLimits } from "../../state/accountLimits";
@@ -30,19 +24,6 @@ import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from ".
 
 /** Age past which a snapshot stops being "current" and earns a caption. */
 const STALE_AFTER_MS = 15 * 60_000;
-
-/**
- * Reset countdowns and snapshot ages drift as time passes, not as data
- * changes; a coarse tick keeps them honest without re-fetching.
- */
-function useNowMs(intervalMs = 30_000): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return nowMs;
-}
 
 function usageTone(usedPercent: number): string | undefined {
   if (usedPercent >= 95) return "text-red-400";
@@ -89,7 +70,7 @@ function SnapshotAge({ snapshot, nowMs }: { snapshot: AccountLimitsSnapshot; now
 /** Always-visible remaining capacity beside the sidebar's Usage label. */
 export function AccountLimitsSidebarGauges() {
   const { snapshots } = useAccountLimits();
-  const nowMs = useNowMs();
+  const nowMs = Date.now();
 
   return (
     <span className="ml-auto flex shrink-0 items-center gap-1.5 group-data-[collapsible=icon]:hidden">
@@ -203,7 +184,7 @@ function AccountLimitsSidebarGauge({
 /** Compact per-provider availability, shown on hovering the Usage button. */
 export function AccountLimitsHoverCard() {
   const { snapshots, isPending, isSettling } = useAccountLimits();
-  const nowMs = useNowMs();
+  const nowMs = Date.now();
 
   if (isPending && snapshots.size === 0) {
     return <p className="px-1 py-2 text-xs text-muted-foreground">Loading limits…</p>;
@@ -264,7 +245,7 @@ export function AccountLimitsHoverCard() {
 /** The "Limits" strip above the analytics: one column per provider. */
 export function AccountLimitsSection() {
   const { snapshots, isSettling } = useAccountLimits();
-  const nowMs = useNowMs();
+  const nowMs = Date.now();
 
   return (
     <section className="flex flex-col gap-3">
