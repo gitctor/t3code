@@ -114,6 +114,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
+    expect(DEFAULT_SERVER_SETTINGS.crews).toEqual([]);
   });
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
@@ -164,6 +165,30 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
         providerInstances: { "1bad": { driver: "codex" } },
       }),
     ).toThrow();
+  });
+});
+
+describe("ServerSettings.crews", () => {
+  const deepBuild = {
+    id: "deep_build",
+    name: "Deep Build",
+    planner: { instanceId: "claudeAgent", model: "claude-opus-5" },
+    members: [{ instanceId: "codex", role: "build" }],
+  };
+
+  it("isolates malformed saved crews", () => {
+    const decoded = decodeServerSettings({
+      crews: [deepBuild, { ...deepBuild, id: "1bad" }, { ...deepBuild, id: "review" }],
+    });
+
+    expect(decoded.crews.map((crew) => crew.id)).toEqual(["deep_build", "review"]);
+  });
+
+  it("decodes crews as a whole-array settings replacement", () => {
+    const patch = decodeServerSettingsPatch({ crews: [deepBuild] });
+
+    expect(patch.crews).toHaveLength(1);
+    expect(patch.crews?.[0]?.name).toBe("Deep Build");
   });
 });
 

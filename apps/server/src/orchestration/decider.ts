@@ -224,6 +224,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   Crypto.Crypto
 > {
   switch (command.type) {
+    case "crew.create":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "crew",
+          aggregateId: command.crew.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "crew.created",
+        payload: {
+          crew: command.crew,
+          createdAt: command.createdAt,
+        },
+      };
+
+    case "crew.update":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "crew",
+          aggregateId: command.crew.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "crew.updated",
+        payload: {
+          crew: command.crew,
+          updatedAt: command.createdAt,
+        },
+      };
+
+    case "crew.delete":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "crew",
+          aggregateId: command.crewId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "crew.deleted",
+        payload: {
+          crewId: command.crewId,
+          deletedAt: command.createdAt,
+        },
+      };
+
     case "project.create": {
       yield* requireProjectAbsent({
         readModel,

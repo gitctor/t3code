@@ -1,4 +1,5 @@
 import type {
+  CrewId,
   OrchestrationEvent,
   OrchestrationReadModel,
   ProjectId,
@@ -57,10 +58,21 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "crew" | "project" | "thread";
+  readonly aggregateId: CrewId | ProjectId | ThreadId;
 } {
   switch (command.type) {
+    case "crew.create":
+    case "crew.update":
+      return {
+        aggregateKind: "crew",
+        aggregateId: command.crew.id,
+      };
+    case "crew.delete":
+      return {
+        aggregateKind: "crew",
+        aggregateId: command.crewId,
+      };
     case "project.create":
     case "project.meta.update":
     case "project.delete":

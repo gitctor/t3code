@@ -205,6 +205,13 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    // Crews are projected into server settings. The command read model has no
+    // duplicate crew state; it only advances its global event cursor.
+    case "crew.created":
+    case "crew.updated":
+    case "crew.deleted":
+      return Effect.succeed(nextBase);
+
     case "project.created":
       return decodeForEvent(ProjectCreatedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {

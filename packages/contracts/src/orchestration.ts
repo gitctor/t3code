@@ -22,7 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
-import { CrewId, DispatchRecord } from "./orchestrationCrew.ts";
+import { Crew, CrewId, DispatchRecord } from "./orchestrationCrew.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -631,6 +631,30 @@ export const ProjectCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const CrewCreateCommand = Schema.Struct({
+  type: Schema.Literal("crew.create"),
+  commandId: CommandId,
+  crew: Crew,
+  createdAt: IsoDateTime,
+});
+export type CrewCreateCommand = typeof CrewCreateCommand.Type;
+
+export const CrewUpdateCommand = Schema.Struct({
+  type: Schema.Literal("crew.update"),
+  commandId: CommandId,
+  crew: Crew,
+  createdAt: IsoDateTime,
+});
+export type CrewUpdateCommand = typeof CrewUpdateCommand.Type;
+
+export const CrewDeleteCommand = Schema.Struct({
+  type: Schema.Literal("crew.delete"),
+  commandId: CommandId,
+  crewId: CrewId,
+  createdAt: IsoDateTime,
+});
+export type CrewDeleteCommand = typeof CrewDeleteCommand.Type;
+
 const ProjectMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("project.meta.update"),
   commandId: CommandId,
@@ -906,6 +930,9 @@ const ThreadSessionStopCommand = Schema.Struct({
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  CrewCreateCommand,
+  CrewUpdateCommand,
+  CrewDeleteCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -934,6 +961,9 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  CrewCreateCommand,
+  CrewUpdateCommand,
+  CrewDeleteCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1076,6 +1106,9 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "crew.created",
+  "crew.updated",
+  "crew.deleted",
   "project.created",
   "project.meta-updated",
   "project.deleted",
@@ -1109,7 +1142,7 @@ export const OrchestrationEventType = Schema.Literals([
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals(["crew", "project", "thread"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1125,6 +1158,24 @@ export const ProjectCreatedPayload = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
+
+export const CrewCreatedPayload = Schema.Struct({
+  crew: Crew,
+  createdAt: IsoDateTime,
+});
+export type CrewCreatedPayload = typeof CrewCreatedPayload.Type;
+
+export const CrewUpdatedPayload = Schema.Struct({
+  crew: Crew,
+  updatedAt: IsoDateTime,
+});
+export type CrewUpdatedPayload = typeof CrewUpdatedPayload.Type;
+
+export const CrewDeletedPayload = Schema.Struct({
+  crewId: CrewId,
+  deletedAt: IsoDateTime,
+});
+export type CrewDeletedPayload = typeof CrewDeletedPayload.Type;
 
 export const ProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
@@ -1363,7 +1414,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([CrewId, ProjectId, ThreadId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1372,6 +1423,21 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("crew.created"),
+    payload: CrewCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("crew.updated"),
+    payload: CrewUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("crew.deleted"),
+    payload: CrewDeletedPayload,
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("project.created"),

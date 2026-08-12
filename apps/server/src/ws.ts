@@ -71,6 +71,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { isCrewPersistenceCommand, persistCrewCommand } from "./orchestration/CrewPersistence.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -1071,6 +1072,12 @@ const makeWsRpcLayer = (
                   )
                 : false;
               const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              if (isCrewPersistenceCommand(normalizedCommand)) {
+                // The domain event commits first. The idempotent settings
+                // projection then makes the authored crew available to live
+                // registry resolution before the RPC reports success.
+                yield* persistCrewCommand(normalizedCommand);
+              }
               if (parkingCommand) {
                 const parkingKind = parkingCommand.type === "thread.archive" ? "archive" : "settle";
                 if (shouldStopSessionAfterCommand) {
