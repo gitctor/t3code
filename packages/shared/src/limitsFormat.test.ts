@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { formatSidebarResetAt } from "./limitsFormat";
+import { formatSidebarResetAt } from "./limitsFormat.ts";
 
 describe("formatSidebarResetAt", () => {
   const nowMs = Date.parse("2026-08-12T12:00:00.000Z");
