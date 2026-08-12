@@ -4066,7 +4066,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const descriptors = getProviderOptionDescriptors({ caps });
-      const apiModelId = modelSelection ? resolveClaudeApiModelId(modelSelection) : undefined;
+      const apiModelId = modelSelection
+        ? resolveClaudeApiModelId(modelSelection, claudeEnvironment)
+        : undefined;
       const initialContextWindow = selectedClaudeContextWindow(modelSelection);
       const rawEffort = getModelSelectionStringOptionValue(modelSelection, "effort");
       const effort = resolveClaudeEffort(caps, rawEffort) ?? null;
@@ -4325,7 +4327,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (modelSelection?.model) {
-      const apiModelId = resolveClaudeApiModelId(modelSelection);
+      const apiModelId = resolveClaudeApiModelId(modelSelection, claudeEnvironment);
       if (context.currentApiModelId !== apiModelId) {
         yield* Effect.tryPromise({
           try: () => context.query.setModel(apiModelId),

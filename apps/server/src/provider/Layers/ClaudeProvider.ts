@@ -449,12 +449,27 @@ export function resolveClaudeContextWindow(
   return typeof value === "string" ? value : undefined;
 }
 
-export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
+function resolveClaudeFamilyAlias(
+  model: string,
+  environment: NodeJS.ProcessEnv | undefined,
+): string {
+  const family = /^claude-(opus|sonnet|haiku)(?:-|$)/u.exec(model)?.[1];
+  if (!family) return model;
+
+  const variable = `ANTHROPIC_DEFAULT_${family.toUpperCase()}_MODEL`;
+  return environment?.[variable]?.trim() ? family : model;
+}
+
+export function resolveClaudeApiModelId(
+  modelSelection: ModelSelection,
+  environment?: NodeJS.ProcessEnv,
+): string {
+  const model = resolveClaudeFamilyAlias(modelSelection.model, environment);
   switch (resolveClaudeContextWindow(modelSelection)) {
     case "1m":
-      return `${modelSelection.model}[1m]`;
+      return `${model}[1m]`;
     default:
-      return modelSelection.model;
+      return model;
   }
 }
 

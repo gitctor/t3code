@@ -180,6 +180,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly environment?: NodeJS.ProcessEnv;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -191,6 +192,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.environment ? { environment: config.environment } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -3641,6 +3643,41 @@ describe("ClaudeAdapterLive", () => {
       });
 
       assert.deepEqual(harness.query.setModelCalls, ["claude-opus-4-6[1m]"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("routes an explicit Claude slug through its configured family alias", () => {
+    const harness = makeHarness({
+      environment: {
+        ...process.env,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "moonshotai/kimi-k3",
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      };
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection,
+        runtimeMode: "full-access",
+      });
+      assert.equal(harness.getLastCreateQueryInput()?.options.model, "sonnet");
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "continue",
+        modelSelection,
+        attachments: [],
+      });
+      assert.deepEqual(harness.query.setModelCalls, []);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
