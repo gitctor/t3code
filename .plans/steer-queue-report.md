@@ -27,6 +27,7 @@ Fork-only follow-ups:
 - `a03ca4cbe` removes a duplicate send-button declaration created by the composer conflict. It preserves the fork's stage artwork and the Stop plus Steer/Queue layout.
 - `b3ee9c2af` rejects incomplete `localStorage` implementations and falls back to in-memory outbox storage.
 - `e016517e2` verifies that Stop remains beside both active-turn send actions.
+- `15a701806` verifies that two overlapping Kimi ACP prompts remain one active turn.
 
 Original PR author ClapFy is preserved as author and credited with `Co-authored-by` on adapted commits.
 
@@ -77,9 +78,9 @@ This was not fixed here. Moving queue ownership to the server needs a wire contr
 
 Focused tests:
 
-- 16 test files passed.
-- 407 tests passed before the final composer assertion was added.
-- The updated composer test then passed with 14 tests.
+- 21 test files passed.
+- 550 tests passed.
+- This includes direct steer coverage for Claude, Codex, Kimi, Cursor, Grok, and OpenCode.
 
 Type checks:
 
