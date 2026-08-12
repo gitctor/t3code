@@ -12,6 +12,7 @@ import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
   OrchestrationThread,
+  OrchestrationCrewThreadMetadata,
   ProjectContentMatch,
   ProjectEntryKind,
   ThreadId,
@@ -101,6 +102,40 @@ export function useThreadSearch(
     matches: isDebouncing ? EMPTY_THREAD_SEARCH_MATCHES : result.matches,
     isPending: canSearch && (isDebouncing || result.isLoading),
   };
+}
+
+export function useCrewThreadMetadata(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyMap<string, OrchestrationCrewThreadMetadata> {
+  const metadataAtoms = useMemo(
+    () =>
+      environmentIds.map((environmentId) => ({
+        environmentId,
+        atom: orchestrationEnvironment.crewThreadMetadata({
+          environmentId,
+          input: {},
+        }),
+      })),
+    [environmentIds],
+  );
+  const combinedAtom = useMemo(
+    () =>
+      Atom.make((get) =>
+        metadataAtoms.map(({ environmentId, atom }) => ({ environmentId, result: get(atom) })),
+      ).pipe(Atom.withLabel("web:crew-thread-metadata")),
+    [metadataAtoms],
+  );
+  const results = useAtomValue(combinedAtom);
+  return useMemo(() => {
+    const metadata = new Map<string, OrchestrationCrewThreadMetadata>();
+    for (const { environmentId, result } of results) {
+      const value = Option.getOrNull(AsyncResult.value(result));
+      for (const thread of value?.threads ?? []) {
+        metadata.set(`${environmentId}:${thread.threadId}`, thread);
+      }
+    }
+    return metadata;
+  }, [results]);
 }
 
 export function useThreadDetail(

@@ -10,7 +10,7 @@ import {
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
-import { Crews } from "./orchestrationCrew.ts";
+import { CrewId, Crews } from "./orchestrationCrew.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -160,6 +160,10 @@ export const ClientSettingsSchema = Schema.Struct({
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  favoriteCrewIds: Schema.Array(CrewId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  crewLastUsedAt: Schema.Record(CrewId, Schema.Number).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   providerModelPreferences: Schema.Record(
     ProviderInstanceId,
     Schema.Struct({
@@ -818,6 +822,8 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  favoriteCrewIds: Schema.optionalKey(Schema.Array(CrewId)),
+  crewLastUsedAt: Schema.optionalKey(Schema.Record(CrewId, Schema.Number)),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,

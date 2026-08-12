@@ -109,6 +109,7 @@ import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../s
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
+import { useCrewThreadMetadata } from "../state/queries";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   buildThreadRouteParams,
@@ -121,6 +122,9 @@ import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   buildBulkTitleRegenerationContextMenuItem,
+  crewDeletePrompt,
+  filterSidebarRootThreads,
+  getCrewChildThreads,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
@@ -161,6 +165,14 @@ import { primaryServerProvidersAtom } from "../state/server";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPopup,
+  DialogTitle,
+} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
@@ -1079,6 +1091,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         isRegeneratingTitle && "opacity-[0.55]",
       )}
     >
+      {thread.latestTurn?.crewId ? "◆ " : null}
       {thread.title}
     </span>
   );
@@ -1492,6 +1505,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   isHighlighted: boolean;
   isRouteActive: boolean;
   resultId: string;
+  crewLabel: string | null;
   onHighlight: () => void;
   onSelect: () => void;
 }) {
@@ -1562,7 +1576,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             className="size-4 shrink-0"
             fallbackIcon={MessageSquareIcon}
           />
-          <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {thread.latestTurn?.crewId ? "◆ " : null}
+            {thread.title}
+            {props.crewLabel ? (
+              <span className="ml-1 text-muted-foreground/60">via {props.crewLabel}</span>
+            ) : null}
+          </span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
           </span>
@@ -1666,12 +1686,47 @@ export default function Sidebar() {
     },
   });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
+  const [pendingCrewDelete, setPendingCrewDelete] = useState<{
+    readonly parent: EnvironmentThreadShell;
+    readonly children: ReadonlyArray<EnvironmentThreadShell>;
+  } | null>(null);
+  const confirmCrewParentDelete = useCallback(
+    async (deleteChildren: boolean) => {
+      const pending = pendingCrewDelete;
+      if (!pending) return;
+      const targets = deleteChildren ? [...pending.children, pending.parent] : [pending.parent];
+      for (const target of targets) {
+        const result = await deleteThread(scopeThreadRef(target.environmentId, target.id));
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to delete thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+          return;
+        }
+      }
+      setPendingCrewDelete(null);
+    },
+    [deleteThread, pendingCrewDelete],
+  );
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
     [],
   );
   const { environments } = useEnvironments();
+  const connectedEnvironmentIds = useMemo(
+    () =>
+      environments
+        .filter((environment) => environment.connection.phase === "connected")
+        .map((environment) => environment.environmentId),
+    [environments],
+  );
+  const crewThreadMetadata = useCrewThreadMetadata(connectedEnvironmentIds);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
@@ -1910,7 +1965,7 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
+    const visible = filterSidebarRootThreads(threads).filter(
       (thread) =>
         thread.archivedAt === null &&
         (scopedProjectKeys === null ||
@@ -3059,6 +3114,11 @@ export default function Sidebar() {
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
           case "delete": {
+            const crewChildren = getCrewChildThreads(threads, thread);
+            if (crewChildren.length > 0) {
+              setPendingCrewDelete({ parent: thread, children: crewChildren });
+              return;
+            }
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
                 api.dialogs.confirm(
@@ -3109,6 +3169,7 @@ export default function Sidebar() {
       startThreadRename,
       updateThreadMetadata,
       timestampFormat,
+      threads,
     ],
   );
 
@@ -3461,6 +3522,11 @@ export default function Sidebar() {
                         isHighlighted={activeSearchResultIndex === index}
                         isRouteActive={routeThreadKey === threadKey}
                         resultId={`sidebar-thread-search-result-${index}`}
+                        crewLabel={
+                          crewThreadMetadata.get(threadKey)?.parentThreadId
+                            ? (crewThreadMetadata.get(threadKey)?.crewName ?? "crew")
+                            : null
+                        }
                         onHighlight={() => setActiveSearchResultIndex(index)}
                         onSelect={() => selectThreadSearchResult(thread)}
                       />
@@ -3766,6 +3832,33 @@ export default function Sidebar() {
           ) : null}
         </SidebarGroup>
       </SidebarContent>
+      {pendingCrewDelete ? (
+        <Dialog open onOpenChange={(open) => !open && setPendingCrewDelete(null)}>
+          <DialogPopup>
+            <DialogHeader>
+              <DialogTitle>Delete thread?</DialogTitle>
+              <DialogDescription>
+                {crewDeletePrompt(pendingCrewDelete.children.length)}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPendingCrewDelete(null)}>
+                Cancel
+              </Button>
+              <Button variant="outline" onClick={() => void confirmCrewParentDelete(false)}>
+                Keep their threads
+              </Button>
+              <Button
+                autoFocus
+                variant="destructive"
+                onClick={() => void confirmCrewParentDelete(true)}
+              >
+                Delete their threads too
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
+      ) : null}
       <SidebarChromeFooter />
     </>
   );

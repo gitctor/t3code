@@ -567,6 +567,19 @@ describe("model and effort attribution", () => {
     expect(agents[0]!.effort).toBe("high");
   });
 
+  it("carries provider instance and child-thread linkage", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "dispatch-1",
+        title: "Build it",
+        instanceId: "kimi_builder",
+        childThreadId: "child-thread-1",
+      }),
+    ]);
+    expect(agents[0]?.instanceId).toBe("kimi_builder");
+    expect(agents[0]?.childThreadId).toBe("child-thread-1");
+  });
+
   it("formatSubagentModelLabel compacts ids and appends effort", () => {
     expect(formatSubagentModelLabel("claude-sonnet-5[1m]", "high")).toBe("sonnet-5[1m] · high");
     expect(formatSubagentModelLabel("claude-opus-4-20250514", null)).toBe("opus-4");

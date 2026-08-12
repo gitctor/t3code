@@ -8,6 +8,7 @@ import {
 import {
   defaultInstanceIdForDriver,
   type EnvironmentId,
+  type Crew,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   type ProviderInstanceConfig,
@@ -38,6 +39,12 @@ import { isElectron } from "../../env";
 import { usePrimarySessionState } from "../../environments/primary";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  sortProviderInstanceEntries,
+} from "../../providerInstances";
+import { getCrewUnavailableReason, CREW_UNAVAILABLE_COPY } from "../../crewSelection";
 import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
   useEnvironments,
@@ -71,6 +78,7 @@ import {
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { CrewEditorDialog } from "../chat/CrewEditorDialog";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -379,6 +387,7 @@ export function EnvironmentProviderSettings({
   });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
   const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
+  const [editingCrew, setEditingCrew] = useState<Crew | null | undefined>(undefined);
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
@@ -389,6 +398,13 @@ export function EnvironmentProviderSettings({
   const providerUpdateCandidates = useMemo(
     () => collectProviderUpdateCandidates(serverProviders),
     [serverProviders],
+  );
+  const providerInstanceEntries = useMemo(
+    () =>
+      sortProviderInstanceEntries(
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
+      ),
+    [serverProviders, settings],
   );
   const providerUpdateCandidateByInstanceId = useMemo(
     () => new Map(providerUpdateCandidates.map((candidate) => [candidate.instanceId, candidate])),
@@ -889,12 +905,77 @@ export function EnvironmentProviderSettings({
         </div>
       </SettingsSection>
 
+      <SettingsSection
+        {...searchableSetting("crews")}
+        headerAction={
+          !readOnly ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="gap-1"
+              onClick={() => setEditingCrew(null)}
+            >
+              <PlusIcon className="size-3" /> New crew
+            </Button>
+          ) : null
+        }
+      >
+        {(settings.crews ?? []).length === 0 ? (
+          <SettingsRow
+            title="No crews yet"
+            description="Create a crew to let one model plan and hand work to your other agents."
+          />
+        ) : (
+          (settings.crews ?? []).map((crew) => {
+            const reason = getCrewUnavailableReason(crew, providerInstanceEntries);
+            return (
+              <SettingsRow
+                key={crew.id}
+                title={`◆ ${crew.name}`}
+                description={
+                  reason
+                    ? CREW_UNAVAILABLE_COPY[reason]
+                    : `${crew.planner.model} plans for ${crew.members.length} member${crew.members.length === 1 ? "" : "s"}.`
+                }
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={readOnly}
+                    onClick={() => setEditingCrew(crew)}
+                  >
+                    Edit
+                  </Button>
+                }
+              />
+            );
+          })
+        )}
+      </SettingsSection>
+
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog
           open
           environmentId={environmentId}
           environmentLabel={environmentLabel}
           onOpenChange={setIsAddInstanceDialogOpen}
+        />
+      ) : null}
+      {editingCrew !== undefined ? (
+        <CrewEditorDialog
+          key={editingCrew?.id ?? "new"}
+          open
+          environmentId={environmentId}
+          crews={settings.crews ?? []}
+          instanceEntries={providerInstanceEntries}
+          initialCrew={editingCrew}
+          allowDelete
+          brokenReason={
+            editingCrew ? getCrewUnavailableReason(editingCrew, providerInstanceEntries) : null
+          }
+          onOpenChange={(open) => {
+            if (!open) setEditingCrew(undefined);
+          }}
         />
       ) : null}
     </>

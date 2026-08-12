@@ -171,6 +171,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   /** Optional content rendered inline after the title text per-thread. */
   renderTrailingContent?: (thread: TThread) => ReactNode;
   getContentMatch?: (thread: TThread) => CommandPaletteThreadContentMatch | undefined;
+  getDescriptionParts?: (thread: TThread) => ReadonlyArray<string>;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
@@ -194,6 +195,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     if (thread.id === input.activeThreadId) {
       descriptionParts.push("Current thread");
     }
+    descriptionParts.push(...(input.getDescriptionParts?.(thread) ?? []));
 
     const leadingContent = input.renderLeadingContent?.(thread);
     const trailingContent = input.renderTrailingContent?.(thread);
@@ -208,6 +210,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
           projectTitle ?? ``,
           thread.branch ?? ``,
           contentMatch?.snippet ?? ``,
+          ...(input.getDescriptionParts?.(thread) ?? []),
         ],
         title: thread.title,
         description: descriptionParts.join(` · `),

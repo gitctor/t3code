@@ -1,4 +1,7 @@
 import {
+  type Crew,
+  type CrewId,
+  type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
@@ -40,6 +43,8 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { isCrewInstanceReady } from "../../crewSelection";
+import { CrewPickerPane } from "./CrewPickerPane";
 
 type ModelPickerItem = {
   slug: string;
@@ -88,6 +93,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
    */
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   terminalOpen: boolean;
+  environmentId?: EnvironmentId;
+  crews?: ReadonlyArray<Crew>;
+  activeCrewId?: CrewId | null;
+  onCrewSelect?: (crew: Crew) => void;
   onRequestClose?: () => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
@@ -106,16 +115,27 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const modelListRef = useRef<LegendListRef | null>(null);
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
-  const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId | "favorites">(
-    () => {
-      if (props.lockedProvider !== null) {
-        // When locked, prime the sidebar to the currently-active instance
-        // so jumping into the picker keeps the focused instance visible.
-        return props.activeInstanceId;
-      }
-      return favorites.length > 0 ? "favorites" : props.activeInstanceId;
-    },
-  );
+  const favoriteCrewIds = useClientSettings((s) => s.favoriteCrewIds ?? []);
+  const [railSelection, setRailSelection] = useState<{
+    readonly selected: ProviderInstanceId | "favorites" | "orchestrate";
+    readonly crewId: CrewId | null;
+  }>(() => ({
+    selected:
+      props.activeCrewId && props.lockedProvider === null
+        ? "orchestrate"
+        : props.lockedProvider !== null
+          ? props.activeInstanceId
+          : favorites.length > 0
+            ? "favorites"
+            : props.activeInstanceId,
+    crewId: props.activeCrewId ?? null,
+  }));
+  const selectedInstanceId =
+    railSelection.crewId === (props.activeCrewId ?? null)
+      ? railSelection.selected
+      : props.activeCrewId && props.lockedProvider === null
+        ? "orchestrate"
+        : railSelection.selected;
   const [expandedLegacyInstances, setExpandedLegacyInstances] = useState(
     () =>
       new Set<ProviderInstanceId>(
@@ -137,13 +157,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   }, []);
 
   const handleSelectInstance = useCallback(
-    (instanceId: ProviderInstanceId | "favorites") => {
-      setSelectedInstanceId(instanceId);
+    (instanceId: ProviderInstanceId | "favorites" | "orchestrate") => {
+      setRailSelection({ selected: instanceId, crewId: props.activeCrewId ?? null });
       window.requestAnimationFrame(() => {
         focusSearchInput();
       });
     },
-    [focusSearchInput],
+    [focusSearchInput, props.activeCrewId],
   );
 
   useLayoutEffect(() => {
@@ -264,6 +284,19 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   }, [instanceEntries, isLocked, matchesLockedProvider]);
+  const readyCrewSeatCount = instanceEntries.filter(isCrewInstanceReady).length;
+  const showOrchestrate =
+    !isLocked &&
+    props.environmentId !== undefined &&
+    props.onCrewSelect !== undefined &&
+    readyCrewSeatCount > 0;
+  const activeCrewAccentColor = props.activeCrewId
+    ? instanceEntries.find(
+        (entry) =>
+          entry.instanceId ===
+          props.crews?.find((crew) => crew.id === props.activeCrewId)?.planner.instanceId,
+      )?.accentColor
+    : undefined;
   const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
   const instanceOrder = useMemo(
     () => instanceEntries.map((entry) => entry.instanceId),
@@ -348,6 +381,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         .map((rankedModel) => rankedModel.model);
     }
 
+    if (selectedInstanceId === "orchestrate") {
+      return [];
+    }
     if (props.lockedProvider !== null) {
       result = result.filter((m) => matchesLockedProvider(m));
       if (selectedInstanceId === "favorites") {
@@ -377,7 +413,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   ]);
 
   const legacySection = useMemo(() => {
-    if (isSearching || selectedInstanceId === "favorites") {
+    if (isSearching || selectedInstanceId === "favorites" || selectedInstanceId === "orchestrate") {
       return null;
     }
     const currentModels = filteredModels.filter((model) => !model.isLegacy);
@@ -608,6 +644,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             onSelectInstance={handleSelectInstance}
             instanceEntries={sidebarInstanceEntries}
             showFavorites
+            showOrchestrate={showOrchestrate}
+            {...(activeCrewAccentColor ? { orchestrateAccentColor: activeCrewAccentColor } : {})}
             {...(lockedDisabledInstanceIds
               ? {
                   disabledInstanceIds: lockedDisabledInstanceIds,
@@ -619,180 +657,215 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         )}
 
         {/* Main content area */}
-        <Combobox
-          inline
-          items={allItemKeys}
-          filteredItems={filteredItemKeys}
-          filter={null}
-          autoHighlight
-          open
-          virtualized
-          value={modelPickerModelKey(props.activeInstanceId, props.model)}
-          onItemHighlighted={(modelKey, eventDetails) => {
-            highlightedModelKeyRef.current = typeof modelKey === "string" ? modelKey : null;
-            if (eventDetails.reason === "keyboard" && eventDetails.index >= 0) {
-              void modelListRef.current?.scrollIndexIntoView?.({
-                index: eventDetails.index,
-                animated: false,
-              });
-            }
-          }}
-          onValueChange={(modelKey) => {
-            if (typeof modelKey !== "string") {
-              return;
-            }
-            const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
-            if (legacyInstanceId) {
-              toggleLegacySection(legacyInstanceId);
-              return;
-            }
-            const model = parseModelPickerModelKey(modelKey);
-            if (model) {
-              handleModelSelect(model.slug, model.instanceId);
-            }
-          }}
-        >
-          <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
-            )}
+        {selectedInstanceId === "orchestrate" && props.environmentId && props.onCrewSelect ? (
+          <CrewPickerPane
+            environmentId={props.environmentId}
+            crews={props.crews ?? []}
+            instanceEntries={instanceEntries}
+            currentSelection={{ instanceId: props.activeInstanceId, model: props.model }}
+            activeCrewId={props.activeCrewId ?? null}
+            onSelectCrew={props.onCrewSelect}
+            {...(props.onRequestClose ? { onRequestClose: props.onRequestClose } : {})}
+            jumpOffset={0}
+            keybindings={keybindings}
+            terminalOpen={props.terminalOpen}
+          />
+        ) : (
+          <Combobox
+            inline
+            items={allItemKeys}
+            filteredItems={filteredItemKeys}
+            filter={null}
+            autoHighlight
+            open
+            virtualized
+            value={modelPickerModelKey(props.activeInstanceId, props.model)}
+            onItemHighlighted={(modelKey, eventDetails) => {
+              highlightedModelKeyRef.current = typeof modelKey === "string" ? modelKey : null;
+              if (eventDetails.reason === "keyboard" && eventDetails.index >= 0) {
+                void modelListRef.current?.scrollIndexIntoView?.({
+                  index: eventDetails.index,
+                  animated: false,
+                });
+              }
+            }}
+            onValueChange={(modelKey) => {
+              if (typeof modelKey !== "string") {
+                return;
+              }
+              const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
+              if (legacyInstanceId) {
+                toggleLegacySection(legacyInstanceId);
+                return;
+              }
+              const model = parseModelPickerModelKey(modelKey);
+              if (model) {
+                handleModelSelect(model.slug, model.instanceId);
+              }
+            }}
           >
-            {/* Search bar */}
-            <div className="px-2 pt-2">
-              <div className="border-b border-border/70 pb-2.5 transition-colors focus-within:border-ring">
-                <ComboboxInput
-                  ref={searchInputRef}
-                  className="[&_input]:h-6.5 [&_input]:font-sans [&_input]:leading-6.5"
-                  inputClassName="rounded-none bg-transparent text-sm"
-                  placeholder="Search models..."
-                  showTrigger={false}
-                  startAddon={
-                    <SearchIcon className="-translate-x-0.5 size-4 shrink-0 text-muted-foreground opacity-70" />
-                  }
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      props.onRequestClose?.();
-                      return;
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
+                showSidebar && "border-l border-border/70",
+              )}
+            >
+              {selectedInstanceId === "favorites" &&
+              props.crews?.some((crew) => favoriteCrewIds.includes(crew.id)) &&
+              props.environmentId &&
+              props.onCrewSelect ? (
+                <div className="max-h-36 shrink-0 overflow-hidden border-b border-border/70 bg-muted/20">
+                  <CrewPickerPane
+                    environmentId={props.environmentId}
+                    crews={props.crews ?? []}
+                    instanceEntries={instanceEntries}
+                    currentSelection={{ instanceId: props.activeInstanceId, model: props.model }}
+                    activeCrewId={props.activeCrewId ?? null}
+                    onSelectCrew={props.onCrewSelect}
+                    {...(props.onRequestClose ? { onRequestClose: props.onRequestClose } : {})}
+                    favoriteOnly
+                    jumpOffset={visibleModels.length}
+                    keybindings={keybindings}
+                    terminalOpen={props.terminalOpen}
+                  />
+                </div>
+              ) : null}
+              {/* Search bar */}
+              <div className="px-2 pt-2">
+                <div className="border-b border-border/70 pb-2.5 transition-colors focus-within:border-ring">
+                  <ComboboxInput
+                    ref={searchInputRef}
+                    className="[&_input]:h-6.5 [&_input]:font-sans [&_input]:leading-6.5"
+                    inputClassName="rounded-none bg-transparent text-sm"
+                    placeholder="Search models..."
+                    showTrigger={false}
+                    startAddon={
+                      <SearchIcon className="-translate-x-0.5 size-4 shrink-0 text-muted-foreground opacity-70" />
                     }
-                    if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                      (
-                        e as typeof e & { preventBaseUIHandler?: () => void }
-                      ).preventBaseUIHandler?.();
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const legacyInstanceId = parseModelPickerLegacySectionKey(
-                        highlightedModelKeyRef.current,
-                      );
-                      if (legacyInstanceId) {
-                        toggleLegacySection(legacyInstanceId);
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        props.onRequestClose?.();
                         return;
                       }
-                      const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                      if (model) {
-                        handleModelSelect(model.slug, model.instanceId);
-                      }
-                      return;
-                    }
-                    e.stopPropagation();
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  size="sm"
-                  unstyled
-                />
-              </div>
-            </div>
-
-            {/* Model list */}
-            <div className="relative min-h-0 flex-1 overflow-hidden pr-px">
-              <ComboboxListVirtualized className="size-full min-w-0 p-0 not-empty:p-0">
-                <LegendList<string>
-                  ref={modelListRef}
-                  data={filteredItemKeys}
-                  extraData={modelListExtraData}
-                  keyExtractor={(modelKey) => modelKey}
-                  renderItem={({ item: modelKey, index }) => {
-                    if (legacySection?.key === modelKey) {
-                      return (
-                        <ComboboxItem
-                          hideIndicator
-                          index={index}
-                          value={modelKey}
-                          aria-expanded={legacySection.isExpanded}
-                          className="group w-full cursor-pointer rounded-md px-2 py-2"
-                          contentClassName="flex w-full items-center gap-3"
-                        >
-                          <div className="min-w-0 flex-1 text-left">
-                            <div className="text-xs font-medium leading-snug">Legacy models</div>
-                            <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground/70">
-                              {legacySection.legacyModels.length} models
-                            </div>
-                          </div>
-                          <ChevronRightIcon
-                            className={cn(
-                              "size-4 transition-transform",
-                              legacySection.isExpanded && "rotate-90",
-                            )}
-                          />
-                        </ComboboxItem>
-                      );
-                    }
-                    const model = filteredModelByKey.get(modelKey);
-                    if (!model) {
-                      return null;
-                    }
-                    const disabledReason =
-                      getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
-                    return (
-                      <ModelListRow
-                        key={modelKey}
-                        index={index}
-                        model={model}
-                        instanceId={model.instanceId}
-                        driverKind={model.driverKind}
-                        providerDisplayName={model.instanceDisplayName}
-                        providerAccentColor={model.instanceAccentColor}
-                        isFavorite={favoritesSet.has(
-                          providerModelKey(model.instanceId, model.slug),
-                        )}
-                        isSelected={
-                          modelKey === modelPickerModelKey(props.activeInstanceId, props.model)
+                      if (e.key === "Enter" && highlightedModelKeyRef.current) {
+                        (
+                          e as typeof e & { preventBaseUIHandler?: () => void }
+                        ).preventBaseUIHandler?.();
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const legacyInstanceId = parseModelPickerLegacySectionKey(
+                          highlightedModelKeyRef.current,
+                        );
+                        if (legacyInstanceId) {
+                          toggleLegacySection(legacyInstanceId);
+                          return;
                         }
-                        showProvider
-                        preferShortName={!isLocked}
-                        useTriggerLabel={false}
-                        showNewBadge={isModelPickerNewModel(model.driverKind, model.slug)}
-                        jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
-                        disabledReason={disabledReason}
-                        onToggleFavorite={() => toggleFavorite(model.instanceId, model.slug)}
-                      />
-                    );
-                  }}
-                  estimatedItemSize={52}
-                  drawDistance={480}
-                  recycleItems
-                  contentContainerClassName="pl-2 pr-px"
-                  ItemSeparatorComponent={ModelListSeparator}
-                  onLayout={updateModelListScrollFades}
-                  onScroll={updateModelListScrollFades}
-                  className={cn(
-                    "model-picker-list scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [--fade-size:1.5rem]",
-                    showTopScrollFade && "model-picker-list-scroll-fade-top",
-                    showBottomScrollFade && "model-picker-list-scroll-fade-bottom",
-                  )}
-                />
-              </ComboboxListVirtualized>
+                        const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+                        if (model) {
+                          handleModelSelect(model.slug, model.instanceId);
+                        }
+                        return;
+                      }
+                      e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    size="sm"
+                    unstyled
+                  />
+                </div>
+              </div>
+
+              {/* Model list */}
+              <div className="relative min-h-0 flex-1 overflow-hidden pr-px">
+                <ComboboxListVirtualized className="size-full min-w-0 p-0 not-empty:p-0">
+                  <LegendList<string>
+                    ref={modelListRef}
+                    data={filteredItemKeys}
+                    extraData={modelListExtraData}
+                    keyExtractor={(modelKey) => modelKey}
+                    renderItem={({ item: modelKey, index }) => {
+                      if (legacySection?.key === modelKey) {
+                        return (
+                          <ComboboxItem
+                            hideIndicator
+                            index={index}
+                            value={modelKey}
+                            aria-expanded={legacySection.isExpanded}
+                            className="group w-full cursor-pointer rounded-md px-2 py-2"
+                            contentClassName="flex w-full items-center gap-3"
+                          >
+                            <div className="min-w-0 flex-1 text-left">
+                              <div className="text-xs font-medium leading-snug">Legacy models</div>
+                              <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground/70">
+                                {legacySection.legacyModels.length} models
+                              </div>
+                            </div>
+                            <ChevronRightIcon
+                              className={cn(
+                                "size-4 transition-transform",
+                                legacySection.isExpanded && "rotate-90",
+                              )}
+                            />
+                          </ComboboxItem>
+                        );
+                      }
+                      const model = filteredModelByKey.get(modelKey);
+                      if (!model) {
+                        return null;
+                      }
+                      const disabledReason =
+                        getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                      return (
+                        <ModelListRow
+                          key={modelKey}
+                          index={index}
+                          model={model}
+                          instanceId={model.instanceId}
+                          driverKind={model.driverKind}
+                          providerDisplayName={model.instanceDisplayName}
+                          providerAccentColor={model.instanceAccentColor}
+                          isFavorite={favoritesSet.has(
+                            providerModelKey(model.instanceId, model.slug),
+                          )}
+                          isSelected={
+                            modelKey === modelPickerModelKey(props.activeInstanceId, props.model)
+                          }
+                          showProvider
+                          preferShortName={!isLocked}
+                          useTriggerLabel={false}
+                          showNewBadge={isModelPickerNewModel(model.driverKind, model.slug)}
+                          jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                          disabledReason={disabledReason}
+                          onToggleFavorite={() => toggleFavorite(model.instanceId, model.slug)}
+                        />
+                      );
+                    }}
+                    estimatedItemSize={52}
+                    drawDistance={480}
+                    recycleItems
+                    contentContainerClassName="pl-2 pr-px"
+                    ItemSeparatorComponent={ModelListSeparator}
+                    onLayout={updateModelListScrollFades}
+                    onScroll={updateModelListScrollFades}
+                    className={cn(
+                      "model-picker-list scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [--fade-size:1.5rem]",
+                      showTopScrollFade && "model-picker-list-scroll-fade-top",
+                      showBottomScrollFade && "model-picker-list-scroll-fade-bottom",
+                    )}
+                  />
+                </ComboboxListVirtualized>
+              </div>
+              <ComboboxEmpty className="not-empty:py-6 empty:h-0 text-xs font-normal leading-snug">
+                No models found
+              </ComboboxEmpty>
             </div>
-            <ComboboxEmpty className="not-empty:py-6 empty:h-0 text-xs font-normal leading-snug">
-              No models found
-            </ComboboxEmpty>
-          </div>
-        </Combobox>
+          </Combobox>
+        )}
       </div>
     </TooltipProvider>
   );

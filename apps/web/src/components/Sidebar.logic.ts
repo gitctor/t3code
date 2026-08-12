@@ -40,6 +40,33 @@ type ScopedSidebarThread = ThreadSortInput & {
   archivedAt: string | null;
 };
 
+type CrewThreadShell = {
+  readonly id: string;
+  readonly environmentId: string;
+  readonly parentThreadId?: string | null;
+};
+
+/** Dispatched child threads stay out of the normal inbox. */
+export function filterSidebarRootThreads<T extends CrewThreadShell>(
+  threads: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  return threads.filter((thread) => !thread.parentThreadId);
+}
+
+export function getCrewChildThreads<T extends CrewThreadShell>(
+  threads: ReadonlyArray<T>,
+  parent: Pick<CrewThreadShell, "id" | "environmentId">,
+): ReadonlyArray<T> {
+  return threads.filter(
+    (thread) =>
+      thread.environmentId === parent.environmentId && thread.parentThreadId === parent.id,
+  );
+}
+
+export function crewDeletePrompt(childThreadCount: number): string {
+  return `This thread dispatched work to ${childThreadCount} agents. Delete their threads too?`;
+}
+
 type LogicalSidebarProject = SidebarProject & {
   projectKey: string;
   memberProjectRefs: readonly {

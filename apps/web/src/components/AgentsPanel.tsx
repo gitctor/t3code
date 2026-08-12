@@ -23,11 +23,20 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import type { ProviderInstanceEntry } from "~/providerInstances";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { ProviderInstanceIcon } from "~/components/chat/ProviderInstanceIcon";
+import { canOpenAgentTranscript } from "./AgentsPanel.logic";
+
+const EMPTY_PROVIDER_ENTRY_MAP: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
+const AgentRowContext = createContext<{
+  readonly providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+  readonly onOpenChildThread?: (agent: RuntimeSubagent) => void;
+}>({ providerEntryByInstanceId: EMPTY_PROVIDER_ENTRY_MAP });
 
 /**
  * In-flight states all present as Working (one steady state, per the
@@ -38,7 +47,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
   pending: { dotClass: "bg-info", label: "Working" },
   running: { dotClass: "bg-info", label: "Working" },
-  waiting: { dotClass: "bg-info", label: "Working" },
+  waiting: { dotClass: "bg-warning", label: "Needs you" },
   // Idle reads as settled (muted, not sky): a resting Codex child looks done
   // unless resumed — live-test: sky idle dots read as stuck in-progress.
   idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
@@ -118,8 +127,8 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
  * failed rows because they explain a red row at a glance.
  */
 function agentActivityText(agent: RuntimeSubagent): string | null {
-  const live =
-    agent.status === "running" || agent.status === "pending" || agent.status === "waiting";
+  if (agent.status === "waiting") return "Needs you";
+  const live = agent.status === "running" || agent.status === "pending";
   if (live) {
     return (
       agent.progress ??
@@ -138,6 +147,7 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
 
 /** Flat, non-interactive agent status line. No unfold. */
 function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+  const { providerEntryByInstanceId, onOpenChildThread } = useContext(AgentRowContext);
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -146,24 +156,43 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
       ? null
       : agent.role;
   const metadata = [
-    modelLabel,
     agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",
     agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
     agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
+  const providerEntry = agent.instanceId
+    ? (providerEntryByInstanceId.get(agent.instanceId) ?? null)
+    : null;
+  const canOpen = canOpenAgentTranscript(agent);
+  const Row = canOpen ? "button" : "div";
 
   return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
+    <Row
+      {...(canOpen ? { type: "button" as const, onClick: () => onOpenChildThread?.(agent) } : {})}
+      className={cn(
+        "grid h-[3.875rem] w-full grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left",
+        canOpen && "cursor-pointer hover:bg-accent/40",
+      )}
+    >
       <span className="col-start-1 row-start-1 flex items-center">
         <StatusDot status={agent.status} />
       </span>
       <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
-        {role ? (
-          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
-            {role}
-          </span>
+        {agent.instanceId ? (
+          providerEntry ? (
+            <ProviderInstanceIcon
+              driverKind={providerEntry.driverKind}
+              displayName={providerEntry.displayName}
+              accentColor={providerEntry.accentColor}
+              className="size-4 shrink-0"
+              iconClassName="size-3.5"
+              indicatorBackground="var(--card)"
+            />
+          ) : (
+            <Bot aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          )
         ) : null}
+        <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
       </span>
       <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
         <span className="inline-flex items-center gap-1">
@@ -171,6 +200,7 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
           {agent.status === "completed" ? (
             <Check aria-hidden className="size-3 text-success" />
           ) : null}
+          {canOpen ? <ChevronRight aria-hidden className="size-3" /> : null}
         </span>
       </span>
       <span
@@ -181,11 +211,22 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
       >
         {activity ?? visuals.label}
       </span>
-      <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
-        {metadata.join(" · ")}
+      <span className="col-start-2 col-end-4 row-start-3 flex min-w-0 items-center gap-1.5 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
+        {modelLabel ? <span className="truncate">{modelLabel}</span> : null}
+        {role ? (
+          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 text-[.65rem] text-muted-foreground">
+            {role}
+          </span>
+        ) : null}
+        {metadata.length > 0 ? (
+          <span className="truncate">
+            {modelLabel ? "· " : ""}
+            {metadata.join(" · ")}
+          </span>
+        ) : null}
       </span>
       <span className="sr-only">{visuals.label}</span>
-    </div>
+    </Row>
   );
 }
 
@@ -522,11 +563,20 @@ export function AgentsPanel({
   model,
   environmentId = null,
   threadId = null,
+  providerEntryByInstanceId = EMPTY_PROVIDER_ENTRY_MAP,
+  onOpenChildThread,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
+  providerEntryByInstanceId?: ReadonlyMap<string, ProviderInstanceEntry>;
+  onOpenChildThread?: (agent: RuntimeSubagent) => void;
 }) {
+  const agentRowContextValue = useMemo(
+    () => ({ providerEntryByInstanceId, ...(onOpenChildThread ? { onOpenChildThread } : {}) }),
+    [onOpenChildThread, providerEntryByInstanceId],
+  );
+
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -541,41 +591,43 @@ export function AgentsPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-2 p-2">
-          {model.workflows.map((group) => (
-            <WorkflowSection
-              key={group.workflow.id}
-              group={group}
-              environmentId={environmentId}
-              threadId={threadId}
-            />
-          ))}
-          {model.directAgents.length > 0 ? (
-            <section>
-              <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                Direct spawns
-              </div>
-              {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
-              ))}
-            </section>
-          ) : null}
-        </div>
-      </ScrollArea>
-      <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
-        <span className="flex items-center gap-2">
-          {model.runningCount + model.waitingCount > 0 ? (
-            <span className="text-info-foreground">
-              ● {model.runningCount + model.waitingCount} working
-            </span>
-          ) : null}
-          {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
-        </span>
-        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
-      </footer>
-    </div>
+    <AgentRowContext value={agentRowContextValue}>
+      <div className="flex h-full min-h-0 flex-col">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-2 p-2">
+            {model.workflows.map((group) => (
+              <WorkflowSection
+                key={group.workflow.id}
+                group={group}
+                environmentId={environmentId}
+                threadId={threadId}
+              />
+            ))}
+            {model.directAgents.length > 0 ? (
+              <section>
+                <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  Direct spawns
+                </div>
+                {model.directAgents.map((agent) => (
+                  <AgentRow key={agent.id} agent={agent} />
+                ))}
+              </section>
+            ) : null}
+          </div>
+        </ScrollArea>
+        <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
+          <span className="flex items-center gap-2">
+            {model.runningCount + model.waitingCount > 0 ? (
+              <span className="text-info-foreground">
+                ● {model.runningCount + model.waitingCount} working
+              </span>
+            ) : null}
+            {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
+            {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
+          </span>
+          <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
+        </footer>
+      </div>
+    </AgentRowContext>
   );
 }

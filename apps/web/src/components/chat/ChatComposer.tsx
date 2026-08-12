@@ -1,5 +1,7 @@
 import type {
   ApprovalRequestId,
+  Crew,
+  CrewId,
   EnvironmentId,
   ModelSelection,
   PreviewAnnotationPayload,
@@ -85,6 +87,7 @@ import {
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { CrewEditorDialog } from "./CrewEditorDialog";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -106,6 +109,7 @@ import { buildExpandedImagePreview, type ExpandedImagePreview } from "./Expanded
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
+import { useUpdateClientSettings } from "../../hooks/useSettings";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -454,6 +458,8 @@ export interface ChatComposerHandle {
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
+  selectCrew: (crewId: CrewId) => boolean;
+  openCrewEditor: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -479,6 +485,7 @@ export interface ChatComposerHandle {
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
+    crewId: CrewId | null;
     providerAvailable: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
@@ -585,6 +592,7 @@ export interface ChatComposerProps {
   ) => void;
 
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onCrewSelect: (crew: Crew) => boolean;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -657,6 +665,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
+    onCrewSelect,
     getModelDisabledReason,
     toggleInteractionMode,
     handleRuntimeModeChange,
@@ -667,6 +676,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onExpandImage,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
+  const crews = settings.crews ?? [];
+  const updateClientSettings = useUpdateClientSettings();
+  const [crewSelection, setCrewSelection] = useState<{
+    readonly threadId: ThreadId | null;
+    readonly crewId: CrewId | null;
+  }>(() => ({
+    threadId: activeThread?.id ?? null,
+    crewId: activeThread?.latestTurn?.crewId ?? null,
+  }));
+  const [isCrewEditorOpen, setIsCrewEditorOpen] = useState(false);
+  const activeCrewId =
+    crewSelection.threadId === (activeThread?.id ?? null)
+      ? crewSelection.crewId
+      : (activeThread?.latestTurn?.crewId ?? null);
+  const activeCrew = crews.find((crew) => crew.id === activeCrewId) ?? null;
+  const effectiveActiveCrewId = activeCrew?.id ?? null;
+
+  const handleCrewSelect = useCallback(
+    (crew: Crew) => {
+      if (!onCrewSelect(crew)) return false;
+      setCrewSelection({ threadId: activeThread?.id ?? null, crewId: crew.id });
+      updateClientSettings({
+        crewLastUsedAt: { ...settings.crewLastUsedAt, [crew.id]: Date.now() },
+      });
+      return true;
+    },
+    [activeThread?.id, onCrewSelect, settings.crewLastUsedAt, updateClientSettings],
+  );
+
+  const handleProviderModelSelect = useCallback(
+    (instanceId: ProviderInstanceId, model: string) => {
+      setCrewSelection({ threadId: activeThread?.id ?? null, crewId: null });
+      onProviderModelSelect(instanceId, model);
+    },
+    [activeThread?.id, onProviderModelSelect],
+  );
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -2545,6 +2590,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setIsComposerModelPickerOpen((open) => !open);
       },
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      selectCrew: (crewId: CrewId) => {
+        const crew = crews.find((candidate) => candidate.id === crewId);
+        if (!crew) return false;
+        return handleCrewSelect(crew);
+      },
+      openCrewEditor: () => setIsCrewEditorOpen(true),
       readSnapshot: () => {
         return readComposerSnapshot();
       },
@@ -2611,6 +2662,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
+        crewId: effectiveActiveCrewId,
         providerAvailable: !noProviderAvailable,
         selectedProvider,
         selectedModel,
@@ -2639,6 +2691,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
+      effectiveActiveCrewId,
+      crews,
+      handleCrewSelect,
       noProviderAvailable,
       selectedPromptEffort,
       selectedProvider,
@@ -3131,6 +3186,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     modelOptionsByInstance={modelOptionsByInstance}
                     triggerClassName="-ms-px"
                     terminalOpen={terminalOpen}
+                    environmentId={environmentId}
+                    crews={crews}
+                    activeCrewId={effectiveActiveCrewId}
+                    onCrewSelect={handleCrewSelect}
                     open={isComposerModelPickerOpen}
                     {...(composerProviderState.modelPickerIconClassName
                       ? {
@@ -3142,7 +3201,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       setIsComposerModelPickerOpen(open);
                     }}
                     getModelDisabledReason={getModelDisabledReason}
-                    onInstanceModelChange={onProviderModelSelect}
+                    onInstanceModelChange={handleProviderModelSelect}
                   />
                 )}
 
@@ -3210,6 +3269,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           )}
         </div>
       </div>
+      {isCrewEditorOpen ? (
+        <CrewEditorDialog
+          open
+          environmentId={environmentId}
+          crews={crews}
+          instanceEntries={providerInstanceEntries}
+          currentSelection={selectedModelSelection}
+          onOpenChange={setIsCrewEditorOpen}
+        />
+      ) : null}
     </form>
   );
 });

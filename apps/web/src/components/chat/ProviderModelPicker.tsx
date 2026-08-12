@@ -1,4 +1,7 @@
 import {
+  type Crew,
+  type CrewId,
+  type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
@@ -36,6 +39,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   compact?: boolean;
   disabled?: boolean;
   terminalOpen?: boolean;
+  environmentId?: EnvironmentId;
+  crews?: ReadonlyArray<Crew>;
+  activeCrewId?: CrewId | null;
+  onCrewSelect?: (crew: Crew) => void;
   open?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
@@ -71,6 +78,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (entry) => activeEntry !== null && entry.driverKind === activeEntry.driverKind,
   ).length;
   const showInstanceBadge = Boolean(activeEntry?.accentColor) || duplicateDriverCount > 1;
+  const activeCrew = props.crews?.find((crew) => crew.id === props.activeCrewId) ?? null;
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -177,9 +185,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ) : null}
           <Tooltip>
             <TooltipTrigger render={<span className="min-w-0 flex-1 overflow-hidden truncate" />}>
-              {triggerTitle}
+              {activeCrew ? `◆ ${activeCrew.name}` : triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
+            <TooltipPopup side="top">
+              {activeCrew ? `◆ ${activeCrew.name}` : triggerLabel}
+            </TooltipPopup>
           </Tooltip>
         </span>
         <span aria-hidden="true" className="flex items-center">
@@ -200,6 +210,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           {...(props.keybindings ? { keybindings: props.keybindings } : {})}
           modelOptionsByInstance={props.modelOptionsByInstance}
           terminalOpen={props.terminalOpen ?? false}
+          {...(props.environmentId ? { environmentId: props.environmentId } : {})}
+          crews={props.crews ?? []}
+          activeCrewId={props.activeCrewId ?? null}
+          {...(props.onCrewSelect ? { onCrewSelect: props.onCrewSelect } : {})}
           onRequestClose={() => setIsMenuOpen(false)}
           {...(props.getModelDisabledReason
             ? { getModelDisabledReason: props.getModelDisabledReason }

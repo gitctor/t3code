@@ -35,6 +35,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   MessageSquareIcon,
+  NetworkIcon,
   PaletteIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -69,7 +70,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
-import { useThreadSearch } from "../state/queries";
+import { useCrewThreadMetadata, useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
@@ -553,6 +554,7 @@ function OpenCommandPaletteDialog(props: {
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
 }) {
+  const composerHandleRef = useComposerHandleContext();
   const navigate = useNavigate();
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
@@ -595,6 +597,7 @@ function OpenCommandPaletteDialog(props: {
   );
   const threadSearchQuery = currentView === null && !isActionsOnly ? deferredQuery : "";
   const threadSearch = useThreadSearch(environmentIds, threadSearchQuery);
+  const crewThreadMetadata = useCrewThreadMetadata(environmentIds);
   const threadContentMatchByKey = useMemo(
     () =>
       new Map(
@@ -825,6 +828,9 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
+  const activeCrews =
+    environments.find((environment) => environment.environmentId === currentProjectEnvironmentId)
+      ?.serverConfig?.settings.crews ?? [];
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
@@ -1015,6 +1021,10 @@ function OpenCommandPaletteDialog(props: {
               }
             : undefined;
         },
+        getDescriptionParts: (thread) => {
+          const metadata = crewThreadMetadata.get(`${thread.environmentId}:${thread.id}`);
+          return metadata?.parentThreadId ? [`via ${metadata.crewName ?? "crew"}`] : [];
+        },
         runThread: async (thread) => {
           await navigate({
             to: "/$environmentId/$threadId",
@@ -1025,6 +1035,7 @@ function OpenCommandPaletteDialog(props: {
     [
       activeThreadId,
       clientSettings.sidebarThreadSortOrder,
+      crewThreadMetadata,
       navigate,
       projectTitleById,
       threadContentMatchByKey,
@@ -1368,6 +1379,31 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+
+  for (const crew of activeCrews) {
+    actionItems.push({
+      kind: "action",
+      value: `action:switch-crew:${crew.id}`,
+      searchTerms: ["crew", "switch", "model", crew.name],
+      title: `Switch to crew: ${crew.name}`,
+      icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
+      disabled: composerHandleRef === null || composerHandleRef.current === null,
+      run: async () => {
+        composerHandleRef?.current?.selectCrew(crew.id);
+      },
+    });
+  }
+  actionItems.push({
+    kind: "action",
+    value: "action:create-crew",
+    searchTerms: ["crew", "create", "new", "agents"],
+    title: "Create crew…",
+    icon: <NetworkIcon className={ITEM_ICON_CLASS} />,
+    disabled: composerHandleRef === null || composerHandleRef.current === null,
+    run: async () => {
+      composerHandleRef?.current?.openCrewEditor();
+    },
+  });
 
   if (projects.length > 0) {
     const activeProjectTitle =

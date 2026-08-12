@@ -172,6 +172,9 @@ import {
   archiveSelectedThreadEntries,
   buildMultiSelectThreadContextMenuItems,
   getSidebarThreadIdsToPrewarm,
+  filterSidebarRootThreads,
+  getCrewChildThreads,
+  crewDeletePrompt,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   isTrailingDoubleClick,
@@ -729,6 +732,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
                     className="min-w-0 flex-1 truncate text-sm"
                     data-testid={`thread-title-${thread.id}`}
                   >
+                    {thread.latestTurn?.crewId ? "◆ " : null}
                     {thread.title}
                   </span>
                 }
@@ -1182,7 +1186,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
   });
   const openPrLink = useOpenPrLink();
-  const sidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const allSidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const sidebarThreads = useMemo(
+    () => filterSidebarRootThreads(allSidebarThreads),
+    [allSidebarThreads],
+  );
   const sidebarThreadByKey = useMemo(
     () =>
       new Map(
@@ -2198,7 +2206,24 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
       if (clicked !== "delete") return;
-      if (appSettingsConfirmThreadDelete) {
+      const crewChildren = getCrewChildThreads(allSidebarThreads, thread);
+      if (crewChildren.length > 0) {
+        const deleteChildren = await api.dialogs.confirm(crewDeletePrompt(crewChildren.length), {
+          variant: "destructive",
+        });
+        if (deleteChildren) {
+          for (const child of crewChildren) {
+            const childResult = await deleteThread(scopeThreadRef(child.environmentId, child.id));
+            if (childResult._tag === "Failure") return;
+          }
+        } else {
+          const keepChildren = await api.dialogs.confirm(
+            "Keep their threads and delete only the parent?",
+            { variant: "destructive" },
+          );
+          if (!keepChildren) return;
+        }
+      } else if (appSettingsConfirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
           [
             `Delete thread "${thread.title}"?`,
@@ -2224,6 +2249,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
     [
       appSettingsConfirmThreadDelete,
+      allSidebarThreads,
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
@@ -3021,7 +3047,11 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 
 export default function LegacySidebar() {
   const projects = useProjects();
-  const sidebarThreads = useThreadShells();
+  const allSidebarThreads = useThreadShells();
+  const sidebarThreads = useMemo(
+    () => filterSidebarRootThreads(allSidebarThreads),
+    [allSidebarThreads],
+  );
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);

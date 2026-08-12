@@ -17,7 +17,7 @@
  * folding (completion can create an agent; a late start only fills
  * metadata).
  */
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId, type OrchestrationThreadActivity } from "@t3tools/contracts";
 
 export type RuntimeSubagentStatus =
   | "pending"
@@ -63,6 +63,8 @@ export interface RuntimeSubagent {
   readonly role: string | null;
   readonly model: string | null;
   readonly effort: string | null;
+  readonly instanceId?: ProviderInstanceId | null;
+  readonly childThreadId?: ThreadId | null;
   readonly status: RuntimeSubagentStatus;
   readonly activationCount: number;
   readonly usage: SubagentUsage | null;
@@ -232,6 +234,8 @@ interface MutableAgent {
   role: string | null;
   model: string | null;
   effort: string | null;
+  instanceId: ProviderInstanceId | null;
+  childThreadId: ThreadId | null;
   status: RuntimeSubagentStatus;
   activationCount: number;
   usage: SubagentUsage | null;
@@ -286,6 +290,12 @@ function getOrCreate(
     role: asString(payload.role) ?? null,
     model: asString(payload.model) ?? null,
     effort: asString(payload.effort) ?? null,
+    instanceId: asString(payload.instanceId)
+      ? ProviderInstanceId.make(asString(payload.instanceId)!)
+      : null,
+    childThreadId: asString(payload.childThreadId)
+      ? ThreadId.make(asString(payload.childThreadId)!)
+      : null,
     status: "pending",
     activationCount: 0,
     usage: null,
@@ -322,6 +332,10 @@ function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): vo
   if (model) agent.model = model;
   const effort = asString(payload.effort);
   if (effort) agent.effort = effort;
+  const instanceId = asString(payload.instanceId);
+  if (instanceId) agent.instanceId = ProviderInstanceId.make(instanceId);
+  const childThreadId = asString(payload.childThreadId);
+  if (childThreadId) agent.childThreadId = ThreadId.make(childThreadId);
   const parentAgentId = asString(payload.parentAgentId);
   if (parentAgentId) {
     agent.parentAgentId = parentAgentId;

@@ -1,5 +1,6 @@
 import {
   type ApprovalRequestId,
+  type Crew,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -152,6 +153,7 @@ import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
+  type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
@@ -161,8 +163,10 @@ import {
   AlarmClockIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  BotIcon,
   GitBranchIcon,
   WifiOffIcon,
+  XIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -178,7 +182,8 @@ import {
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -505,6 +510,7 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: ThreadSyncPhase | null;
+      embedded?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -515,6 +521,7 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: never;
+      embedded?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1184,6 +1191,7 @@ function ChatViewContent(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    embedded = false,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
@@ -1351,6 +1359,8 @@ function ChatViewContent(props: ChatViewProps) {
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
   const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const supportsTranscriptDrawer = useMediaQuery("(min-width: 768px)");
+  const [openChildAgent, setOpenChildAgent] = useState<RuntimeSubagent | null>(null);
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
@@ -2169,6 +2179,13 @@ function ChatViewContent(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  const providerEntryByInstanceId = useMemo(
+    () =>
+      new Map(
+        deriveProviderInstanceEntries(providerStatuses).map((entry) => [entry.instanceId, entry]),
+      ),
+    [providerStatuses],
+  );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider,
@@ -4645,6 +4662,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
   useEffect(() => {
+    if (embedded) return;
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
@@ -4791,6 +4809,7 @@ function ChatViewContent(props: ChatViewProps) {
     toggleRightPanel,
     toggleTerminalVisibility,
     composerRef,
+    embedded,
   ]);
 
   const onRevertToTurnCount = useCallback(
@@ -4915,6 +4934,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
+      crewId: ctxCrewId,
     } = sendCtx;
     const composerImages =
       directAnnotation?.image &&
@@ -5241,6 +5261,7 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode,
+          ...(ctxCrewId ? { crewId: ctxCrewId } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -5516,6 +5537,7 @@ function ChatViewContent(props: ChatViewProps) {
         selectedProviderModels: ctxSelectedProviderModels,
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
+        crewId: ctxCrewId,
       } = sendCtx;
 
       const threadIdForSend = activeThread.id;
@@ -5595,6 +5617,7 @@ function ChatViewContent(props: ChatViewProps) {
             titleSeed: activeThread.title,
             runtimeMode,
             interactionMode: nextInteractionMode,
+            ...(ctxCrewId ? { crewId: ctxCrewId } : {}),
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
                   sourceProposedPlan: {
@@ -5672,6 +5695,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
+      crewId: ctxCrewId,
     } = sendCtx;
 
     const createdAt = new Date().toISOString();
@@ -5727,6 +5751,7 @@ function ChatViewContent(props: ChatViewProps) {
           titleSeed: nextThreadTitle,
           runtimeMode,
           interactionMode: "default",
+          ...(ctxCrewId ? { crewId: ctxCrewId } : {}),
           sourceProposedPlan: {
             threadId: activeThread.id,
             planId: activeProposedPlan.id,
@@ -5898,6 +5923,57 @@ function ChatViewContent(props: ChatViewProps) {
       settings,
     ],
   );
+  const onCrewSelect = useCallback(
+    (crew: Crew): boolean => {
+      if (!activeThread) return false;
+      const entry = providerStatuses.find(
+        (snapshot) => snapshot.instanceId === crew.planner.instanceId,
+      );
+      if (!entry) return false;
+      const resolvedModel = resolveAppModelSelectionForInstance(
+        crew.planner.instanceId,
+        settings,
+        providerStatuses,
+        crew.planner.model,
+      );
+      if (!resolvedModel) return false;
+      const nextModelSelection: ModelSelection = {
+        instanceId: crew.planner.instanceId,
+        model: resolvedModel,
+        ...(crew.planner.options?.length ? { options: crew.planner.options } : {}),
+      };
+      const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({
+        providers: providerStatuses,
+        hasStartedSession: activeThread.session !== null,
+        currentModelSelection: activeThread.modelSelection,
+        currentProviderInstanceId: activeThread.session?.providerInstanceId ?? null,
+        nextModelSelection,
+      });
+      if (modelChangeBlockReason) {
+        toastManager.add({
+          type: "warning",
+          title: modelChangeBlockReason.title,
+          description: modelChangeBlockReason.description,
+        });
+        scheduleComposerFocus();
+        return false;
+      }
+      setComposerDraftModelSelection(
+        scopeThreadRef(activeThread.environmentId, activeThread.id),
+        nextModelSelection,
+        { replaceOptions: true },
+      );
+      scheduleComposerFocus();
+      return true;
+    },
+    [
+      activeThread,
+      providerStatuses,
+      scheduleComposerFocus,
+      setComposerDraftModelSelection,
+      settings,
+    ],
+  );
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
       if (canOverrideServerThreadEnvMode) {
@@ -6011,6 +6087,20 @@ function ChatViewContent(props: ChatViewProps) {
       {panelToggleControls}
     </div>
   );
+  const openAgentTranscript = (agent: RuntimeSubagent) => {
+    if (!agent.childThreadId) return;
+    if (!supportsTranscriptDrawer || embedded) {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: {
+          environmentId: activeThread.environmentId,
+          threadId: agent.childThreadId,
+        },
+      });
+      return;
+    }
+    setOpenChildAgent(agent);
+  };
   const rightPanelContent = activeThreadRef ? (
     activeRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -6086,6 +6176,8 @@ function ChatViewContent(props: ChatViewProps) {
         model={agentPanelModel}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
+        providerEntryByInstanceId={providerEntryByInstanceId}
+        onOpenChildThread={openAgentTranscript}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -6111,10 +6203,20 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : null
   ) : null;
+  const drawerAgent = openChildAgent?.childThreadId
+    ? ([
+        ...agentPanelModel.directAgents,
+        ...agentPanelModel.workflows.flatMap((group) => [
+          group.workflow,
+          ...group.phases.flatMap((phase) => phase.members),
+          ...group.unphasedMembers,
+        ]),
+      ].find((agent) => agent.childThreadId === openChildAgent.childThreadId) ?? openChildAgent)
+    : null;
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-      {rightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
+      {!embedded && rightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -6123,51 +6225,53 @@ function ChatViewContent(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <header
-          data-chat-header
-          className={cn(
-            "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
-            isElectron
-              ? cn(
-                  "workspace-topbar drag-region relative px-3 sm:px-5",
-                  reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
-                    "wco:pr-[var(--workspace-native-controls-inset)]",
-                )
-              : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
-          {!rightPanelOpen ? panelLayoutControls : null}
-          <ChatHeader
-            {...(!supportsPullRequests || threadRepository === null
-              ? {}
-              : { onOpenPullRequest: openThreadPullRequest })}
-            activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
-            activeThreadTitle={activeThread.title}
-            isServerThread={isServerThread}
-            changeRequestState={activeThreadPr?.state ?? null}
-            activeProjectName={activeProject?.title}
-            activeProjectCwd={activeProject?.workspaceRoot ?? null}
-            activeProjectFaviconPath={activeProject?.faviconPath ?? null}
-            openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
-            preferredScriptId={
-              activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
-            }
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
-            onNewThreadInProject={handleNewThreadInActiveProject}
-            onRunProjectScript={runProjectScript}
-            onAddProjectScript={saveProjectScript}
-            onUpdateProjectScript={updateProjectScript}
-            onDeleteProjectScript={deleteProjectScript}
-          />
-        </header>
+        {!embedded ? (
+          <header
+            data-chat-header
+            className={cn(
+              "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
+              isElectron
+                ? cn(
+                    "workspace-topbar drag-region relative px-3 sm:px-5",
+                    reserveTitleBarControlInset &&
+                      !inlineRightPanelOwnsTitleBar &&
+                      "wco:pr-[var(--workspace-native-controls-inset)]",
+                  )
+                : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
+              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            )}
+          >
+            {!rightPanelOpen ? panelLayoutControls : null}
+            <ChatHeader
+              {...(!supportsPullRequests || threadRepository === null
+                ? {}
+                : { onOpenPullRequest: openThreadPullRequest })}
+              activeThreadEnvironmentId={activeThread.environmentId}
+              activeThreadId={activeThread.id}
+              {...(routeKind === "draft" && draftId ? { draftId } : {})}
+              activeThreadTitle={activeThread.title}
+              isServerThread={isServerThread}
+              changeRequestState={activeThreadPr?.state ?? null}
+              activeProjectName={activeProject?.title}
+              activeProjectCwd={activeProject?.workspaceRoot ?? null}
+              activeProjectFaviconPath={activeProject?.faviconPath ?? null}
+              openInCwd={gitCwd}
+              activeProjectScripts={activeProject?.scripts}
+              preferredScriptId={
+                activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
+              }
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              rightPanelOpen={rightPanelOpen}
+              gitCwd={gitCwd}
+              onNewThreadInProject={handleNewThreadInActiveProject}
+              onRunProjectScript={runProjectScript}
+              onAddProjectScript={saveProjectScript}
+              onUpdateProjectScript={updateProjectScript}
+              onDeleteProjectScript={deleteProjectScript}
+            />
+          </header>
+        ) : null}
 
         <ThreadErrorBanner
           error={visibleThreadError}
@@ -6371,6 +6475,7 @@ function ChatViewContent(props: ChatViewProps) {
                               onChangeActivePendingUserInputCustomAnswer
                             }
                             onProviderModelSelect={onProviderModelSelect}
+                            onCrewSelect={onCrewSelect}
                             getModelDisabledReason={getModelDisabledReason}
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
@@ -6387,7 +6492,7 @@ function ChatViewContent(props: ChatViewProps) {
                           data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
                           className="relative z-0"
                         >
-                          {showComposerContextStrip && (
+                          {!embedded && showComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
                                 environmentId={activeThread.environmentId}
@@ -6489,27 +6594,33 @@ function ChatViewContent(props: ChatViewProps) {
         </div>
         {/* end horizontal flex container */}
 
-        {mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-          <PersistentThreadTerminalDrawer
-            key={mountedThreadKey}
-            threadRef={mountedThreadRef}
-            threadId={mountedThreadRef.threadId}
-            visible={mountedThreadKey === activeThreadKey && terminalUiState.terminalOpen}
-            launchContext={
-              mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
-            }
-            focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraft}
-          />
-        ))}
+        {!embedded
+          ? mountedTerminalThreadRefs.map(
+              ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+                <PersistentThreadTerminalDrawer
+                  key={mountedThreadKey}
+                  threadRef={mountedThreadRef}
+                  threadId={mountedThreadRef.threadId}
+                  visible={mountedThreadKey === activeThreadKey && terminalUiState.terminalOpen}
+                  launchContext={
+                    mountedThreadKey === activeThreadKey
+                      ? (activeTerminalLaunchContext ?? null)
+                      : null
+                  }
+                  focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                  splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                  splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+                  newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                  closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                  keybindings={keybindings}
+                  onAddTerminalContext={addTerminalContextToDraft}
+                />
+              ),
+            )
+          : null}
       </div>
 
-      {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {!embedded && !shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
@@ -6542,7 +6653,7 @@ function ChatViewContent(props: ChatViewProps) {
           {rightPanelContent}
         </RightPanelTabs>
       ) : null}
-      {shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
+      {!embedded && shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelSheet open onClose={closePreviewPanel}>
           <RightPanelTabs
             mode="sheet"
@@ -6585,7 +6696,118 @@ function ChatViewContent(props: ChatViewProps) {
           onClose={closeExpandedImage}
         />
       )}
+      {!embedded && drawerAgent?.childThreadId ? (
+        <CrewTranscriptDrawer
+          environmentId={activeThread.environmentId}
+          agent={drawerAgent}
+          providerEntry={
+            drawerAgent.instanceId
+              ? (providerEntryByInstanceId.get(drawerAgent.instanceId) ?? null)
+              : null
+          }
+          onClose={() => setOpenChildAgent(null)}
+          onOpenAsThread={() => {
+            setOpenChildAgent(null);
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: {
+                environmentId: activeThread.environmentId,
+                threadId: drawerAgent.childThreadId!,
+              },
+            });
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function CrewTranscriptDrawer(props: {
+  readonly environmentId: EnvironmentId;
+  readonly agent: RuntimeSubagent & { readonly childThreadId?: ThreadId | null };
+  readonly providerEntry: ReturnType<typeof deriveProviderInstanceEntries>[number] | null;
+  readonly onClose: () => void;
+  readonly onOpenAsThread: () => void;
+}) {
+  const childThreadId = props.agent.childThreadId!;
+  const childRef = useMemo(
+    () => scopeThreadRef(props.environmentId, childThreadId),
+    [childThreadId, props.environmentId],
+  );
+  const childThread = useThread(childRef);
+  const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn, { reportFailure: false });
+  const canStop =
+    childThread !== undefined &&
+    (props.agent.status === "pending" ||
+      props.agent.status === "running" ||
+      props.agent.status === "waiting");
+  const statusDotClass =
+    props.agent.status === "completed"
+      ? "bg-success"
+      : props.agent.status === "failed"
+        ? "bg-destructive"
+        : props.agent.status === "waiting"
+          ? "bg-warning"
+          : props.agent.status === "running" || props.agent.status === "pending"
+            ? "bg-info"
+            : "bg-muted-foreground/60";
+
+  return (
+    <aside className="absolute inset-y-0 right-0 z-[70] flex w-[min(30rem,100%)] flex-col border-l bg-background shadow-2xl">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+        {props.providerEntry ? (
+          <ProviderInstanceIcon
+            driverKind={props.providerEntry.driverKind}
+            displayName={props.providerEntry.displayName}
+            accentColor={props.providerEntry.accentColor}
+            className="size-5"
+            iconClassName="size-4"
+            indicatorBackground="var(--background)"
+          />
+        ) : (
+          <BotIcon aria-hidden className="size-4 text-muted-foreground" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {childThread?.title ?? props.agent.title}
+        </span>
+        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", statusDotClass)} />
+        {canStop ? (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              if (!childThread) return;
+              void interruptTurn({
+                environmentId: props.environmentId,
+                input: buildThreadTurnInterruptInput(childThread),
+              });
+            }}
+          >
+            Stop
+          </Button>
+        ) : null}
+        <Button size="xs" variant="ghost" onClick={props.onOpenAsThread}>
+          Open as thread ↗
+        </Button>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label="Close transcript"
+          onClick={props.onClose}
+        >
+          <XIcon />
+        </Button>
+      </header>
+      <div className="flex min-h-0 flex-1">
+        <ChatView
+          environmentId={props.environmentId}
+          threadId={childThreadId}
+          routeKind="server"
+          embedded
+          reserveTitleBarControlInset={false}
+        />
+      </div>
+    </aside>
   );
 }
 
