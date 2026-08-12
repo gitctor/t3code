@@ -1,6 +1,7 @@
 import {
   ChatAttachment,
   CheckpointRef,
+  CrewId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -61,6 +62,7 @@ import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
   ProjectionSnapshotQuery,
   type ProjectionFullThreadDiffContext,
+  type ProjectionCrewThreadMetadata,
   type ProjectionSnapshotCounts,
   type ProjectionThreadCheckpointContext,
   type ProjectionSnapshotQueryShape,
@@ -102,6 +104,7 @@ const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
 const ProjectionLatestTurnDbRowSchema = Schema.Struct({
   threadId: ProjectionThread.fields.threadId,
   turnId: TurnId,
+  crewId: Schema.NullOr(CrewId),
   state: Schema.String,
   requestedAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
@@ -125,6 +128,12 @@ const ProjectionThreadSearchRow = Schema.Struct({
   source: OrchestrationThreadSearchSource,
   matchText: Schema.String,
   messageCreatedAt: Schema.NullOr(IsoDateTime),
+});
+const ProjectionCrewThreadMetadataDbRowSchema = Schema.Struct({
+  threadId: ThreadId,
+  parentThreadId: Schema.NullOr(ThreadId),
+  crewId: Schema.NullOr(CrewId),
+  childThreadCount: NonNegativeInt,
 });
 const WorkspaceRootLookupInput = Schema.Struct({
   workspaceRoot: Schema.String,
@@ -259,6 +268,7 @@ function mapLatestTurn(
 ): OrchestrationLatestTurn {
   return {
     turnId: row.turnId,
+    ...(row.crewId !== null ? { crewId: row.crewId } : {}),
     state:
       row.state === "error"
         ? "error"
@@ -681,6 +691,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
+          turns.crew_id AS "crewId",
           turns.state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
@@ -705,6 +716,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
+          turns.crew_id AS "crewId",
           turns.state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
@@ -731,6 +743,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
+          turns.crew_id AS "crewId",
           turns.state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
@@ -838,6 +851,36 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           thread_updated_at DESC,
           thread_id ASC
         LIMIT ${limit}
+      `,
+  });
+
+  const listCrewThreadMetadataRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionCrewThreadMetadataDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          threads.thread_id AS "threadId",
+          threads.parent_thread_id AS "parentThreadId",
+          parent_turn.crew_id AS "crewId",
+          COUNT(DISTINCT child_dispatch.child_thread_id) AS "childThreadCount"
+        FROM projection_threads AS threads
+        LEFT JOIN projection_dispatches AS origin_dispatch
+          ON origin_dispatch.child_thread_id = threads.thread_id
+        LEFT JOIN projection_turns AS parent_turn
+          ON parent_turn.thread_id = origin_dispatch.parent_thread_id
+          AND parent_turn.turn_id = origin_dispatch.parent_turn_id
+        LEFT JOIN projection_dispatches AS child_dispatch
+          ON child_dispatch.parent_thread_id = threads.thread_id
+          AND child_dispatch.child_thread_id IS NOT NULL
+        WHERE threads.deleted_at IS NULL
+        GROUP BY
+          threads.thread_id,
+          threads.parent_thread_id,
+          parent_turn.crew_id
+        HAVING threads.parent_thread_id IS NOT NULL
+          OR COUNT(DISTINCT child_dispatch.child_thread_id) > 0
+        ORDER BY threads.thread_id ASC
       `,
   });
 
@@ -1056,6 +1099,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           turns.thread_id AS "threadId",
           turns.turn_id AS "turnId",
+          turns.crew_id AS "crewId",
           turns.state,
           turns.requested_at AS "requestedAt",
           turns.started_at AS "startedAt",
@@ -1504,6 +1548,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 }
                 latestTurnByThread.set(row.threadId, {
                   turnId: row.turnId,
+                  ...(row.crewId !== null ? { crewId: row.crewId } : {}),
                   state:
                     row.state === "error"
                       ? "error"
@@ -2162,6 +2207,25 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     };
   });
 
+  const getCrewThreadMetadata: ProjectionSnapshotQueryShape["getCrewThreadMetadata"] = () =>
+    listCrewThreadMetadataRows(undefined).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getCrewThreadMetadata:query",
+          "ProjectionSnapshotQuery.getCrewThreadMetadata:decodeRows",
+        ),
+      ),
+      Effect.map(
+        (rows): ReadonlyArray<ProjectionCrewThreadMetadata> =>
+          rows.map((row) => ({
+            threadId: row.threadId,
+            parentThreadId: row.parentThreadId,
+            crewId: row.crewId,
+            childThreadCount: row.childThreadCount,
+          })),
+      ),
+    );
+
   const getActiveProjectByWorkspaceRoot: ProjectionSnapshotQueryShape["getActiveProjectByWorkspaceRoot"] =
     (workspaceRoot) =>
       getActiveProjectRowByWorkspaceRoot({ workspaceRoot }).pipe(
@@ -2680,6 +2744,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getShellSnapshot,
     getArchivedShellSnapshot,
     searchThreads,
+    getCrewThreadMetadata,
     getSnapshotSequence,
     getCounts,
     getActiveProjectByWorkspaceRoot,

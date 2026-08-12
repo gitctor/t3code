@@ -8,6 +8,7 @@
  */
 import type {
   CheckpointRef,
+  CrewId,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -52,6 +53,13 @@ export interface ProjectionFullThreadDiffContext {
   readonly worktreePath: string | null;
   readonly latestCheckpointTurnCount: number;
   readonly toCheckpointRef: CheckpointRef | null;
+}
+
+export interface ProjectionCrewThreadMetadata {
+  readonly threadId: ThreadId;
+  readonly parentThreadId: ThreadId | null;
+  readonly crewId: CrewId | null;
+  readonly childThreadCount: number;
 }
 
 /**
@@ -104,6 +112,12 @@ export interface ProjectionSnapshotQueryShape {
   readonly searchThreads: (
     input: OrchestrationSearchThreadsInput,
   ) => Effect.Effect<OrchestrationSearchThreadsResult, ProjectionRepositoryError>;
+
+  /** Read sparse crew ancestry and child counts for sidebar and search labels. */
+  readonly getCrewThreadMetadata?: () => Effect.Effect<
+    ReadonlyArray<ProjectionCrewThreadMetadata>,
+    ProjectionRepositoryError
+  >;
 
   /**
    * Read the latest projection snapshot sequence without hydrating read-model

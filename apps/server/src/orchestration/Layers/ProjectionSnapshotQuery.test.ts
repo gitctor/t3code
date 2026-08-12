@@ -1,5 +1,6 @@
 import {
   CheckpointRef,
+  CrewId,
   EventId,
   MessageId,
   ProjectId,
@@ -39,6 +40,70 @@ const projectionSnapshotLayer = it.layer(
 );
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
+  it.effect("returns sparse child ancestry, crew provenance, and parent child counts", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_dispatches`;
+      yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, parent_thread_id, title, runtime_mode,
+          interaction_mode, created_at, updated_at
+        ) VALUES
+          ('parent', 'project-1', NULL, 'Parent', 'full-access', 'default',
+            '2026-08-11T12:00:00.000Z', '2026-08-11T12:00:00.000Z'),
+          ('child-a', 'project-1', 'parent', 'Child A', 'full-access', 'default',
+            '2026-08-11T12:01:00.000Z', '2026-08-11T12:01:00.000Z'),
+          ('child-b', 'project-1', 'parent', 'Child B', 'full-access', 'default',
+            '2026-08-11T12:02:00.000Z', '2026-08-11T12:02:00.000Z'),
+          ('ordinary', 'project-1', NULL, 'Ordinary', 'full-access', 'default',
+            '2026-08-11T12:03:00.000Z', '2026-08-11T12:03:00.000Z')
+      `;
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id, turn_id, crew_id, state, requested_at, checkpoint_files_json
+        ) VALUES (
+          'parent', 'turn-1', 'deep_build', 'completed',
+          '2026-08-11T12:00:00.000Z', '[]'
+        )
+      `;
+      yield* sql`
+        INSERT INTO projection_dispatches (
+          dispatch_id, parent_thread_id, parent_turn_id, child_thread_id,
+          instance_id, provider, title, status, started_at
+        ) VALUES
+          ('dispatch-a', 'parent', 'turn-1', 'child-a', 'claudeAgent',
+            'claudeAgent', 'Build', 'completed', '2026-08-11T12:01:00.000Z'),
+          ('dispatch-b', 'parent', 'turn-1', 'child-b', 'codex',
+            'codex', 'Review', 'running', '2026-08-11T12:02:00.000Z')
+      `;
+
+      assert.deepStrictEqual(yield* snapshotQuery.getCrewThreadMetadata!(), [
+        {
+          threadId: ThreadId.make("child-a"),
+          parentThreadId: ThreadId.make("parent"),
+          crewId: CrewId.make("deep_build"),
+          childThreadCount: 0,
+        },
+        {
+          threadId: ThreadId.make("child-b"),
+          parentThreadId: ThreadId.make("parent"),
+          crewId: CrewId.make("deep_build"),
+          childThreadCount: 0,
+        },
+        {
+          threadId: ThreadId.make("parent"),
+          parentThreadId: null,
+          crewId: null,
+          childThreadCount: 2,
+        },
+      ]);
+    }),
+  );
+
   it.effect("hydrates read model from projection tables and computes snapshot sequence", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
@@ -48,6 +113,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_state`;
       yield* sql`DELETE FROM projection_thread_proposed_plans`;
       yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_dispatches`;
+      yield* sql`DELETE FROM projection_threads`;
 
       yield* sql`
         INSERT INTO projection_projects (
@@ -213,6 +280,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         INSERT INTO projection_turns (
           thread_id,
           turn_id,
+          crew_id,
           pending_message_id,
           source_proposed_plan_thread_id,
           source_proposed_plan_id,
@@ -229,6 +297,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         VALUES (
           'thread-1',
           'turn-1',
+          'deep_build',
           NULL,
           'thread-1',
           'plan-1',
@@ -307,6 +376,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           worktreePath: null,
           latestTurn: {
             turnId: asTurnId("turn-1"),
+            crewId: CrewId.make("deep_build"),
             state: "completed",
             requestedAt: "2026-02-24T00:00:08.000Z",
             startedAt: "2026-02-24T00:00:08.000Z",
@@ -427,6 +497,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           worktreePath: null,
           latestTurn: {
             turnId: asTurnId("turn-1"),
+            crewId: CrewId.make("deep_build"),
             state: "completed",
             requestedAt: "2026-02-24T00:00:08.000Z",
             startedAt: "2026-02-24T00:00:08.000Z",

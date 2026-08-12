@@ -30,6 +30,7 @@ export const ORCHESTRATION_WS_METHODS = {
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
+  getCrewThreadMetadata: "orchestration.getCrewThreadMetadata",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
@@ -347,6 +348,9 @@ export type OrchestrationLatestTurnState = typeof OrchestrationLatestTurnState.T
 
 export const OrchestrationLatestTurn = Schema.Struct({
   turnId: TurnId,
+  // Crew provenance is optional so old shell caches still decode. New crew
+  // turns expose it from projection_turns.crew_id.
+  crewId: Schema.optionalKey(CrewId),
   state: OrchestrationLatestTurnState,
   requestedAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
@@ -1725,6 +1729,22 @@ export const OrchestrationSearchThreadsResult = Schema.Struct({
 });
 export type OrchestrationSearchThreadsResult = typeof OrchestrationSearchThreadsResult.Type;
 
+/** Sparse sidebar/search metadata for dispatched children and their parents. */
+export const OrchestrationCrewThreadMetadata = Schema.Struct({
+  threadId: ThreadId,
+  parentThreadId: Schema.NullOr(ThreadId),
+  crewId: Schema.NullOr(CrewId),
+  crewName: Schema.NullOr(TrimmedNonEmptyString),
+  childThreadCount: NonNegativeInt,
+});
+export type OrchestrationCrewThreadMetadata = typeof OrchestrationCrewThreadMetadata.Type;
+
+export const OrchestrationGetCrewThreadMetadataResult = Schema.Struct({
+  threads: Schema.Array(OrchestrationCrewThreadMetadata),
+});
+export type OrchestrationGetCrewThreadMetadataResult =
+  typeof OrchestrationGetCrewThreadMetadataResult.Type;
+
 export const OrchestrationGetWorkflowScriptInput = Schema.Struct({
   threadId: ThreadId,
   /** Absolute path from the workflow's runHandles.scriptPath. The server
@@ -1793,6 +1813,10 @@ export const OrchestrationRpcSchemas = {
   searchThreads: {
     input: OrchestrationSearchThreadsInput,
     output: OrchestrationSearchThreadsResult,
+  },
+  getCrewThreadMetadata: {
+    input: Schema.Struct({}),
+    output: OrchestrationGetCrewThreadMetadataResult,
   },
   getArchivedShellSnapshot: {
     input: Schema.Struct({}),

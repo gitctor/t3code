@@ -29,6 +29,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 60_000,
     }),
+    crewThreadMetadata: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:crew-thread-metadata",
+      tag: ORCHESTRATION_WS_METHODS.getCrewThreadMetadata,
+    }),
     archivedShellSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-shell-snapshot",
       tag: ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot,

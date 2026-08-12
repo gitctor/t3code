@@ -9,6 +9,7 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
   CommandId,
+  CrewId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   EventId,
@@ -795,6 +796,7 @@ const buildAppUnderTest = (options?: {
               updatedAt: "1970-01-01T00:00:00.000Z",
             }),
           searchThreads: () => Effect.succeed({ matches: [] }),
+          getCrewThreadMetadata: () => Effect.succeed([]),
           getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
           getProjectShellById: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
@@ -5866,6 +5868,21 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           projectionSnapshotQuery: {
             getSnapshot: () => Effect.succeed(snapshot),
+            getCrewThreadMetadata: () =>
+              Effect.succeed([
+                {
+                  threadId: ThreadId.make("child-thread"),
+                  parentThreadId: ThreadId.make("thread-1"),
+                  crewId: CrewId.make("deep_build"),
+                  childThreadCount: 0,
+                },
+                {
+                  threadId: ThreadId.make("thread-1"),
+                  parentThreadId: null,
+                  crewId: null,
+                  childThreadCount: 1,
+                },
+              ]),
             searchThreads: () =>
               Effect.succeed({
                 matches: [
@@ -5878,6 +5895,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   },
                 ],
               }),
+          },
+          serverSettings: {
+            getSettings: Effect.succeed({
+              ...DEFAULT_SERVER_SETTINGS,
+              crews: [
+                {
+                  id: CrewId.make("deep_build"),
+                  name: "Deep Build",
+                  planner: {
+                    instanceId: ProviderInstanceId.make("codex"),
+                    model: "gpt-5.6-sol",
+                  },
+                  members: [{ instanceId: ProviderInstanceId.make("claudeAgent") }],
+                },
+              ],
+            }),
           },
           orchestrationEngine: {
             dispatch: () => Effect.succeed({ sequence: 7 }),
@@ -5950,6 +5983,28 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           source: "assistant",
           snippet: "Search reached the final response.",
           messageCreatedAt: now,
+        },
+      ]);
+
+      const crewThreadMetadata = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.getCrewThreadMetadata]({}),
+        ),
+      );
+      assert.deepEqual(crewThreadMetadata.threads, [
+        {
+          threadId: ThreadId.make("child-thread"),
+          parentThreadId: ThreadId.make("thread-1"),
+          crewId: CrewId.make("deep_build"),
+          crewName: "Deep Build",
+          childThreadCount: 0,
+        },
+        {
+          threadId: ThreadId.make("thread-1"),
+          parentThreadId: null,
+          crewId: null,
+          crewName: null,
+          childThreadCount: 1,
         },
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),

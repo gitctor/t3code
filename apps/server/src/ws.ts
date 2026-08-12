@@ -1184,6 +1184,32 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getCrewThreadMetadata]: (_input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getCrewThreadMetadata,
+            Effect.gen(function* () {
+              const [metadata, settings] = yield* Effect.all([
+                projectionSnapshotQuery.getCrewThreadMetadata?.() ?? Effect.succeed([]),
+                serverSettings.getSettings,
+              ]);
+              const crewNames = new Map(settings.crews.map((crew) => [crew.id, crew.name]));
+              return {
+                threads: metadata.map((row) => ({
+                  ...row,
+                  crewName: row.crewId === null ? null : (crewNames.get(row.crewId) ?? null),
+                })),
+              };
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Failed to load crew thread metadata",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeShell,
