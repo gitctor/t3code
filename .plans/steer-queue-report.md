@@ -27,7 +27,8 @@ Fork-only follow-ups:
 - `a03ca4cbe` removes a duplicate send-button declaration created by the composer conflict. It preserves the fork's stage artwork and the Stop plus Steer/Queue layout.
 - `b3ee9c2af` rejects incomplete `localStorage` implementations and falls back to in-memory outbox storage.
 - `e016517e2` verifies that Stop remains beside both active-turn send actions.
-- `15a701806` verifies that two overlapping Kimi ACP prompts remain one active turn.
+- `15a701806` initially tested overlapping Kimi prompts against the generic mock ACP agent. That mock did not model Kimi's single mutable turn state.
+- `5b335ab42` replaces that unsafe assumption with an explicit Kimi and unknown-provider Queue fallback. It also adds direct Grok steering coverage.
 
 Original PR author ClapFy is preserved as author and credited with `Co-authored-by` on adapted commits.
 
@@ -37,17 +38,17 @@ Original PR author ClapFy is preserved as author and credited with `Co-authored-
 | --- | --- | --- | --- |
 | Claude | Steer | Adds the message to the live SDK prompt queue and keeps the current turn ID. | None required. |
 | Codex | Steer | Uses native `turn/steer`. A successful request reaffirms the active turn to orchestration. Late acknowledgements restore the already-settled ready or error state. | A rejected native steer follows the typed recovery path and starts a normal turn only when safe. |
-| Kimi | Steer | The ACP session accepts another `session/prompt` while work is active. The adapter counts prompts in flight and reuses the current turn ID until all prompts settle. | None required. The ACP capability is implemented and tested in this fork, so the UI does not claim a queue-only Kimi fallback. |
+| Kimi | Queue only | Kimi CLI 1.49.0 keeps one mutable `_turn_state` per ACP session. Another `session/prompt` would replace that state and make cancellation and settlement unsafe. The adapter rejects a concurrent prompt. Web and mobile resolve Steer to the per-thread FIFO before sending. | The settings surfaces state that Kimi always uses Queue. Unknown drivers also use Queue until they declare steering support. |
 | Cursor | Steer | Sends another ACP prompt into the active session and reuses the current turn ID. | None required. |
 | Grok | Steer | Sends another ACP prompt into the active session and reuses the current turn ID. | None required. |
 | OpenCode | Steer | Sends a prompt into the active OpenCode session and preserves its current turn ID. | None required. |
 
-The setting is global because all six installed adapters support steering. Queue remains available as an explicit preference.
+The preference remains global. Each composer resolves it against the selected provider. Claude, Codex, Cursor, Grok, and OpenCode honor Steer. Kimi and unknown drivers show and use the safe Queue action while a turn runs.
 
 ## Crew child and planner routing
 
 The crew transcript drawer renders an embedded `ChatView` with the child's `environmentId` and `childThreadId`.
-The drawer composer therefore reads the same delivery preference but sends and queues against the child thread.
+The drawer composer therefore reads the same delivery preference, resolves the child's provider capability, and sends or queues against the child thread.
 Web outbox keys include both environment and thread IDs, so parent and child FIFOs cannot merge.
 
 The planner composer remains the outer `ChatView` and resolves its target from `activeThread.id`.
@@ -68,7 +69,7 @@ Verification passed for:
 
 ## Issue #5436 verdict
 
-The reported mobile background-loss shape still exists.
+The upstream issue was still open with the reported mobile background-loss shape on 2026-08-12.
 The mobile queue is persisted by the client and drained by `use-thread-outbox-drain` while the mobile JavaScript runtime is active.
 If the app is suspended after enqueue, the server does not own a durable command that can send the next message when the active turn settles.
 
@@ -79,15 +80,15 @@ This was not fixed here. Moving queue ownership to the server needs a wire contr
 Focused tests:
 
 - 21 test files passed.
-- 550 tests passed.
-- This includes direct steer coverage for Claude, Codex, Kimi, Cursor, Grok, and OpenCode.
+- 558 tests passed.
+- This includes direct steer coverage for Claude, Codex, Cursor, Grok, and OpenCode, plus direct rejection coverage for a second active Kimi prompt.
 
 Type checks:
 
 - `apps/server`: passed `tsgo --noEmit`.
 - `packages/contracts`: passed `tsgo --noEmit`.
 - `apps/web`: passed `tsgo --noEmit` in the live working tree, including the concurrent crew-editor edits.
-- `apps/mobile`: the committed tree still fails on existing React Navigation route inference across unrelated screens. The active-turn files and focused mobile tests pass.
+- `apps/mobile`: `tsgo --noEmit` still reports 64 existing React Navigation route inference errors across unrelated screens. No active-turn file appears in the remaining error list. The focused mobile tests pass.
 
 ## Visual QA checklist
 
