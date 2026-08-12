@@ -1189,7 +1189,7 @@ const makeWsRpcLayer = (
             ORCHESTRATION_WS_METHODS.getCrewThreadMetadata,
             Effect.gen(function* () {
               const [metadata, settings] = yield* Effect.all([
-                projectionSnapshotQuery.getCrewThreadMetadata?.() ?? Effect.succeed([]),
+                projectionSnapshotQuery.getCrewThreadMetadata(),
                 serverSettings.getSettings,
               ]);
               const crewNames = new Map(settings.crews.map((crew) => [crew.id, crew.name]));

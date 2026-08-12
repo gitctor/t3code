@@ -81,7 +81,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             'codex', 'Review', 'running', '2026-08-11T12:02:00.000Z')
       `;
 
-      assert.deepStrictEqual(yield* snapshotQuery.getCrewThreadMetadata!(), [
+      assert.deepStrictEqual(yield* snapshotQuery.getCrewThreadMetadata(), [
         {
           threadId: ThreadId.make("child-a"),
           parentThreadId: ThreadId.make("parent"),

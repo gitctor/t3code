@@ -114,7 +114,7 @@ export interface ProjectionSnapshotQueryShape {
   ) => Effect.Effect<OrchestrationSearchThreadsResult, ProjectionRepositoryError>;
 
   /** Read sparse crew ancestry and child counts for sidebar and search labels. */
-  readonly getCrewThreadMetadata?: () => Effect.Effect<
+  readonly getCrewThreadMetadata: () => Effect.Effect<
     ReadonlyArray<ProjectionCrewThreadMetadata>,
     ProjectionRepositoryError
   >;
