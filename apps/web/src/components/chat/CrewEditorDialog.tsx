@@ -4,6 +4,7 @@ import {
   type EnvironmentId,
   type ModelSelection,
   type ProviderInstanceId,
+  type ProviderOptionSelection,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -40,6 +41,7 @@ type DraftMember = {
   readonly instanceId: ProviderInstanceId | null;
   readonly model: string;
   readonly role: string;
+  readonly options?: ReadonlyArray<ProviderOptionSelection> | undefined;
 };
 
 function memberDraft(member: CrewMember, key: string): DraftMember {
@@ -48,6 +50,7 @@ function memberDraft(member: CrewMember, key: string): DraftMember {
     instanceId: member.instanceId,
     model: member.model ?? "",
     role: member.role ?? "",
+    ...(member.options?.length ? { options: member.options } : {}),
   };
 }
 
@@ -65,9 +68,12 @@ export function CrewEditorDialog(props: {
   readonly instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly currentSelection?: ModelSelection | null;
   readonly initialCrew?: Crew | null;
+  /** Prefill for a CREATE: seeds every field but keeps create semantics. */
+  readonly templateCrew?: Crew | null;
   readonly allowDelete?: boolean;
   readonly brokenReason?: ReturnType<typeof getCrewUnavailableReason>;
 }) {
+  const seedCrew = props.initialCrew ?? props.templateCrew ?? null;
   const readyEntries = useMemo(
     () => props.instanceEntries.filter(isCrewInstanceReady),
     [props.instanceEntries],
@@ -75,24 +81,23 @@ export function CrewEditorDialog(props: {
   const initialPlannerEntry =
     props.instanceEntries.find(
       (entry) =>
-        entry.instanceId ===
-        (props.initialCrew?.planner.instanceId ?? props.currentSelection?.instanceId),
+        entry.instanceId === (seedCrew?.planner.instanceId ?? props.currentSelection?.instanceId),
     ) ?? readyEntries[0];
   const initialPlannerModel = selectModel(
     initialPlannerEntry,
-    props.initialCrew?.planner.model ?? props.currentSelection?.model ?? "",
+    seedCrew?.planner.model ?? props.currentSelection?.model ?? "",
   );
-  const [name, setName] = useState(props.initialCrew?.name ?? "");
+  const [name, setName] = useState(seedCrew?.name ?? "");
   const [plannerInstanceId, setPlannerInstanceId] = useState<ProviderInstanceId | null>(
     initialPlannerEntry?.instanceId ?? null,
   );
   const [plannerModel, setPlannerModel] = useState(initialPlannerModel);
   const [plannerOptions, setPlannerOptions] = useState(
-    props.initialCrew?.planner.options ?? props.currentSelection?.options,
+    seedCrew?.planner.options ?? props.currentSelection?.options,
   );
   const [members, setMembers] = useState<ReadonlyArray<DraftMember>>(() =>
-    props.initialCrew?.members.length
-      ? props.initialCrew.members.map((member, index) => memberDraft(member, `${index}`))
+    seedCrew?.members.length
+      ? seedCrew.members.map((member, index) => memberDraft(member, `${index}`))
       : [
           {
             key: "new-member",
@@ -165,6 +170,7 @@ export function CrewEditorDialog(props: {
               {
                 instanceId: member.instanceId,
                 ...(member.model ? { model: member.model } : {}),
+                ...(member.options?.length ? { options: member.options } : {}),
                 ...(member.role.trim() ? { role: member.role.trim() } : {}),
               },
             ]
@@ -347,7 +353,7 @@ export function CrewEditorDialog(props: {
               return (
                 <div
                   key={member.key}
-                  className="grid gap-2 rounded-lg border p-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                  className="grid gap-2 rounded-lg border p-2 sm:grid-cols-[1fr_1fr_auto_1fr_auto]"
                 >
                   <Select
                     value={member.instanceId}
@@ -355,7 +361,9 @@ export function CrewEditorDialog(props: {
                       if (!instanceId) return;
                       setMembers((current) =>
                         current.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, instanceId, model: "" } : item,
+                          itemIndex === index
+                            ? { ...item, instanceId, model: "", options: undefined }
+                            : item,
                         ),
                       );
                     }}
@@ -383,7 +391,11 @@ export function CrewEditorDialog(props: {
                       setMembers((current) =>
                         current.map((item, itemIndex) =>
                           itemIndex === index
-                            ? { ...item, model: model === "__default__" ? "" : model }
+                            ? {
+                                ...item,
+                                model: model === "__default__" ? "" : model,
+                                options: undefined,
+                              }
                             : item,
                         ),
                       );
@@ -406,6 +418,65 @@ export function CrewEditorDialog(props: {
                       ))}
                     </SelectPopup>
                   </Select>
+                  {(() => {
+                    // Effort applies only when a concrete model is picked — the
+                    // instance-default model's options are unknown until runtime.
+                    const memberCaps = member.model
+                      ? entry?.models.find((model) => model.slug === member.model)?.capabilities
+                      : undefined;
+                    const memberDescriptor = memberCaps
+                      ? getProviderOptionDescriptors({
+                          caps: memberCaps,
+                          selections: member.options,
+                        }).find(
+                          (
+                            descriptor,
+                          ): descriptor is Extract<
+                            ReturnType<typeof getProviderOptionDescriptors>[number],
+                            { type: "select" }
+                          > => descriptor.type === "select",
+                        )
+                      : undefined;
+                    const memberEffort = getProviderOptionCurrentValue(memberDescriptor);
+                    return (
+                      <Select
+                        value={typeof memberEffort === "string" ? memberEffort : null}
+                        disabled={!memberDescriptor}
+                        onValueChange={(value) => {
+                          if (!memberDescriptor || !value) return;
+                          setMembers((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? {
+                                    ...item,
+                                    options: [{ id: memberDescriptor.id, value }],
+                                  }
+                                : item,
+                            ),
+                          );
+                        }}
+                      >
+                        <SelectTrigger
+                          className="w-22"
+                          aria-label={`Crew member ${index + 1} effort`}
+                        >
+                          <SelectValue placeholder="—">
+                            {memberDescriptor?.options.find((option) => option.id === memberEffort)
+                              ?.label ??
+                              (typeof memberEffort === "string" ? memberEffort : null) ??
+                              "—"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {memberDescriptor?.options.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    );
+                  })()}
                   <Input
                     maxLength={32}
                     value={member.role}

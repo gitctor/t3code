@@ -86,6 +86,9 @@ import {
   shouldUseCompactComposerFooter,
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { getCrewUnavailableReason } from "../../crewSelection";
+import { crewEditorRequestAtom } from "../../state/crewEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { CrewEditorDialog } from "./CrewEditorDialog";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
@@ -696,7 +699,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     threadId: activeThread?.id ?? null,
     crewId: activeThread?.latestTurn?.crewId ?? null,
   }));
-  const [isCrewEditorOpen, setIsCrewEditorOpen] = useState(false);
+  // Shared request slot: the crew picker (inside the model-picker popover)
+  // and the command palette both open THIS dialog, so the popover can close
+  // without unmounting the editor.
+  const crewEditorRequest = useAtomValue(crewEditorRequestAtom);
+  const setCrewEditorRequest = useAtomSet(crewEditorRequestAtom);
   const activeCrewId =
     crewSelection.threadId === (activeThread?.id ?? null)
       ? crewSelection.crewId
@@ -2616,7 +2623,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (!crew) return false;
         return handleCrewSelect(crew);
       },
-      openCrewEditor: () => setIsCrewEditorOpen(true),
+      openCrewEditor: () => setCrewEditorRequest({ crew: null }),
       readSnapshot: () => {
         return readComposerSnapshot();
       },
@@ -3315,14 +3322,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ) : null}
         </div>
       </div>
-      {isCrewEditorOpen ? (
+      {crewEditorRequest !== null ? (
         <CrewEditorDialog
+          key={crewEditorRequest.crew?.id ?? "new"}
           open
           environmentId={environmentId}
           crews={crews}
           instanceEntries={providerInstanceEntries}
           currentSelection={selectedModelSelection}
-          onOpenChange={setIsCrewEditorOpen}
+          initialCrew={crewEditorRequest.crew}
+          templateCrew={crewEditorRequest.template ?? null}
+          brokenReason={
+            crewEditorRequest.crew
+              ? getCrewUnavailableReason(crewEditorRequest.crew, providerInstanceEntries)
+              : null
+          }
+          onOpenChange={(open) => {
+            if (!open) setCrewEditorRequest(null);
+          }}
         />
       ) : null}
     </form>

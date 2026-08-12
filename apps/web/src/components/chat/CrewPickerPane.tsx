@@ -8,16 +8,23 @@ import {
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentLabel, getProviderOptionDescriptors } from "@t3tools/shared/model";
 import { useNavigate } from "@tanstack/react-router";
-import { PencilIcon, PlusIcon, StarIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { OrbitIcon, PencilIcon, PlusIcon, StarIcon } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { useAtomSet } from "@effect/atom-react";
 
-import { CREW_UNAVAILABLE_COPY, getCrewUnavailableReason, sortCrews } from "../../crewSelection";
+import {
+  CREW_UNAVAILABLE_COPY,
+  buildOrchestratorTemplate,
+  getCrewUnavailableReason,
+  sortCrews,
+} from "../../crewSelection";
+import { crewEditorRequestAtom } from "../../state/crewEditor";
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { CrewEditorDialog } from "./CrewEditorDialog";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -70,7 +77,13 @@ export function CrewPickerPane(props: {
   const favoriteCrewIdSet = useMemo(() => new Set(favoriteCrewIds), [favoriteCrewIds]);
   const crewLastUsedAt = useClientSettings((settings) => settings.crewLastUsedAt ?? {});
   const updateSettings = useUpdateClientSettings();
-  const [editingCrew, setEditingCrew] = useState<Crew | null | undefined>(undefined);
+  const setCrewEditorRequest = useAtomSet(crewEditorRequestAtom);
+  // Editing closes the picker; the dialog itself is hosted by the composer so
+  // it outlives this popover (see state/crewEditor.ts).
+  const openEditor = (crew: Crew | null, template?: Crew) => {
+    props.onRequestClose?.();
+    setCrewEditorRequest({ crew, ...(template ? { template } : {}) });
+  };
   const entriesById = useMemo(
     () => new Map(props.instanceEntries.map((entry) => [entry.instanceId, entry])),
     [props.instanceEntries],
@@ -154,8 +167,13 @@ export function CrewPickerPane(props: {
                 A crew is one model that plans and hands work to your other agents.
               </p>
             </div>
-            <Button size="sm" onClick={() => setEditingCrew(null)}>
-              <PlusIcon /> Create your first crew
+            <Button
+              size="sm"
+              onClick={() =>
+                openEditor(null, buildOrchestratorTemplate(props.instanceEntries) ?? undefined)
+              }
+            >
+              <PlusIcon /> Create your Orchestrator crew
             </Button>
           </div>
         ) : (
@@ -202,36 +220,71 @@ export function CrewPickerPane(props: {
                       className="min-w-0 flex-1 pr-20 text-left"
                       onClick={() => {
                         if (reason) {
-                          setEditingCrew(crew);
+                          openEditor(crew);
                           return;
                         }
                         props.onSelectCrew(crew);
                         props.onRequestClose?.();
                       }}
                     >
-                      <span className="block truncate text-sm font-medium">◆ {crew.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                        <OrbitIcon className="size-3.5 shrink-0 opacity-80" />
+                        <span className="truncate">{crew.name}</span>
+                      </span>
                       <span
-                        className="block truncate text-xs"
+                        className="flex min-w-0 items-center gap-1 text-xs"
                         style={
                           plannerEntry?.accentColor
                             ? { color: plannerEntry.accentColor }
                             : undefined
                         }
                       >
-                        {plannerModel}
-                        {effort ? ` ${effort.toLowerCase()}` : ""} plans
+                        {plannerEntry ? (
+                          <ProviderInstanceIcon
+                            driverKind={plannerEntry.driverKind}
+                            displayName={plannerEntry.displayName}
+                            className="size-3 shrink-0"
+                            iconClassName="size-3"
+                            badgeContent="none"
+                          />
+                        ) : null}
+                        <span className="truncate">
+                          {plannerModel}
+                          {effort ? ` ${effort.toLowerCase()}` : ""} plans
+                        </span>
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {reason
-                          ? CREW_UNAVAILABLE_COPY[reason]
-                          : `→ ${crew.members
-                              .map((member) => {
-                                const label =
-                                  entriesById.get(member.instanceId)?.displayName ??
-                                  member.instanceId;
-                                return member.role ? `${label} (${member.role})` : label;
-                              })
-                              .join(" · ")}`}
+                      <span className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+                        {reason ? (
+                          CREW_UNAVAILABLE_COPY[reason]
+                        ) : (
+                          <>
+                            <span className="shrink-0">→</span>
+                            {crew.members.map((member, memberIndex) => {
+                              const entry = entriesById.get(member.instanceId);
+                              return (
+                                <span
+                                  key={`${member.instanceId}-${memberIndex}`}
+                                  className="flex min-w-0 shrink items-center gap-1"
+                                >
+                                  {memberIndex > 0 ? <span className="shrink-0">·</span> : null}
+                                  {entry ? (
+                                    <ProviderInstanceIcon
+                                      driverKind={entry.driverKind}
+                                      displayName={entry.displayName}
+                                      className="size-3 shrink-0"
+                                      iconClassName="size-3"
+                                      badgeContent="none"
+                                    />
+                                  ) : null}
+                                  <span className="truncate">
+                                    {entry?.displayName ?? member.instanceId}
+                                    {member.role ? ` (${member.role})` : ""}
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </>
+                        )}
                       </span>
                     </button>
                     <div className="absolute right-2 top-1.5 flex items-center gap-0.5">
@@ -245,7 +298,7 @@ export function CrewPickerPane(props: {
                         variant="ghost"
                         className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                         aria-label={`Edit ${crew.name}`}
-                        onClick={() => setEditingCrew(crew)}
+                        onClick={() => openEditor(crew)}
                       >
                         <PencilIcon />
                       </Button>
@@ -275,7 +328,7 @@ export function CrewPickerPane(props: {
               <button
                 type="button"
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
-                onClick={() => setEditingCrew(null)}
+                onClick={() => openEditor(null)}
               >
                 <PlusIcon className="size-4" /> New crew…
               </button>
@@ -292,23 +345,6 @@ export function CrewPickerPane(props: {
           </div>
         )}
       </div>
-      {editingCrew !== undefined ? (
-        <CrewEditorDialog
-          key={editingCrew?.id ?? "new"}
-          open
-          environmentId={props.environmentId}
-          crews={props.crews}
-          instanceEntries={props.instanceEntries}
-          currentSelection={props.currentSelection}
-          initialCrew={editingCrew}
-          brokenReason={
-            editingCrew ? getCrewUnavailableReason(editingCrew, props.instanceEntries) : null
-          }
-          onOpenChange={(open) => {
-            if (!open) setEditingCrew(undefined);
-          }}
-        />
-      ) : null}
     </div>
   );
 }

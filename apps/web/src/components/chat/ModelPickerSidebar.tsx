@@ -1,6 +1,6 @@
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { NetworkIcon, SparklesIcon, StarIcon } from "lucide-react";
+import { OrbitIcon, SparklesIcon, StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -208,7 +208,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                       aria-label="Orchestrate"
                       onClick={() => handleSelect("orchestrate")}
                     >
-                      <NetworkIcon
+                      <OrbitIcon
                         className="size-5"
                         style={
                           props.orchestrateAccentColor

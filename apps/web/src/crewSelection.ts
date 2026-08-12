@@ -65,3 +65,49 @@ export function makeCrewId(name: string, existingIds: ReadonlySet<string>): Crew
   }
   return CrewId.make(candidate);
 }
+
+/**
+ * The starter crew: Fable plans at max effort, the other ready agents
+ * execute. Used to prefill the editor on first run — never saved silently.
+ * Returns null when no ready instance can take the planner seat.
+ */
+export function buildOrchestratorTemplate(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): Crew | null {
+  const ready = entries.filter(isCrewInstanceReady);
+  const byDriver = (kind: string) => ready.find((entry) => entry.driverKind === kind);
+  const claude = byDriver("claudeAgent");
+  const fable = claude?.models.find((model) => model.slug.includes("fable"));
+  const planner = claude && fable ? { entry: claude, model: fable.slug } : null;
+  const fallback = ready[0];
+  const fallbackModel = fallback?.models.find((model) => model.isDefault) ?? fallback?.models[0];
+  const seat =
+    planner ?? (fallback && fallbackModel ? { entry: fallback, model: fallbackModel.slug } : null);
+  if (!seat) return null;
+  const effortId = seat.entry.models
+    .find((model) => model.slug === seat.model)
+    ?.capabilities?.optionDescriptors?.find((descriptor) => descriptor.type === "select")?.id;
+  const memberSeats = [
+    { kind: "codex", role: "build" },
+    { kind: "claudeAgent", role: "review" },
+    { kind: "kimi", role: "design" },
+  ]
+    .map(({ kind, role }) => ({ entry: byDriver(kind), role }))
+    .filter((candidate): candidate is { entry: ProviderInstanceEntry; role: string } =>
+      Boolean(candidate.entry),
+    );
+  if (memberSeats.length === 0 && ready.length > 0) {
+    memberSeats.push({ entry: ready[0]!, role: "build" });
+  }
+  if (memberSeats.length === 0) return null;
+  return {
+    id: CrewId.make("orchestrator"),
+    name: "Orchestrator",
+    planner: {
+      instanceId: seat.entry.instanceId,
+      model: seat.model,
+      ...(planner && effortId ? { options: [{ id: effortId, value: "xhigh" }] } : {}),
+    },
+    members: memberSeats.map(({ entry, role }) => ({ instanceId: entry.instanceId, role })),
+  };
+}

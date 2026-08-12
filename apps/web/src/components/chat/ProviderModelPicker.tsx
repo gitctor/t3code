@@ -7,6 +7,7 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { memo, useEffect, useMemo, useState } from "react";
+import { OrbitIcon } from "lucide-react";
 import type { VariantProps } from "class-variance-authority";
 import { buttonVariants } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -185,10 +186,17 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ) : null}
           <Tooltip>
             <TooltipTrigger render={<span className="min-w-0 flex-1 overflow-hidden truncate" />}>
-              {activeCrew ? `◆ ${activeCrew.name}` : triggerTitle}
+              {activeCrew ? activeCrew.name : triggerTitle}
             </TooltipTrigger>
             <TooltipPopup side="top">
-              {activeCrew ? `◆ ${activeCrew.name}` : triggerLabel}
+              {activeCrew ? (
+                <span className="flex min-w-0 items-center gap-1">
+                  <OrbitIcon className="size-3.5 shrink-0" />
+                  <span className="truncate">{activeCrew.name}</span>
+                </span>
+              ) : (
+                triggerLabel
+              )}
             </TooltipPopup>
           </Tooltip>
         </span>
