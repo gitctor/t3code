@@ -134,7 +134,14 @@ function flattenQueues(
 
 function resolveBaseStorage(): { storage: EnumerableStorage; durable: boolean } {
   try {
-    if (typeof localStorage !== "undefined") {
+    if (
+      typeof localStorage !== "undefined" &&
+      typeof localStorage.length === "number" &&
+      typeof localStorage.getItem === "function" &&
+      typeof localStorage.setItem === "function" &&
+      typeof localStorage.removeItem === "function" &&
+      typeof localStorage.key === "function"
+    ) {
       return { storage: localStorage, durable: true };
     }
   } catch {
