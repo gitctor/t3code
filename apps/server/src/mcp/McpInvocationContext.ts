@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  OrchestrationError,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ThreadId,
@@ -7,7 +8,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview";
+export type McpCapability = "preview" | "orchestration";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -23,13 +24,11 @@ export class McpInvocationContext extends Context.Service<
   McpInvocationScope
 >()("t3/mcp/McpInvocationContext") {}
 
-export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
-  capability: McpCapability,
-) {
+const requirePreviewCapability = Effect.fn("mcp.requirePreviewCapability")(function* () {
   const invocation = yield* McpInvocationContext;
-  if (!invocation.capabilities.has(capability)) {
+  if (!invocation.capabilities.has("preview")) {
     return yield* new PreviewAutomationUnavailableError({
-      capability,
+      capability: "preview",
       environmentId: invocation.environmentId,
       threadId: invocation.threadId,
       providerSessionId: invocation.providerSessionId,
@@ -38,3 +37,26 @@ export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function*
   }
   return invocation;
 });
+
+const requireOrchestrationCapability = Effect.fn("mcp.requireOrchestrationCapability")(
+  function* () {
+    const invocation = yield* McpInvocationContext;
+    if (!invocation.capabilities.has("orchestration")) {
+      return yield* new OrchestrationError({
+        code: "not-orchestrating",
+        message: "No crew is active for this thread.",
+      });
+    }
+    return invocation;
+  },
+);
+
+export function requireMcpCapability(
+  capability: "preview",
+): Effect.Effect<McpInvocationScope, PreviewAutomationUnavailableError, McpInvocationContext>;
+export function requireMcpCapability(
+  capability: "orchestration",
+): Effect.Effect<McpInvocationScope, OrchestrationError, McpInvocationContext>;
+export function requireMcpCapability(capability: McpCapability) {
+  return capability === "preview" ? requirePreviewCapability() : requireOrchestrationCapability();
+}
