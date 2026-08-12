@@ -269,7 +269,9 @@ export function CrewEditorDialog(props: {
                 }}
               >
                 <SelectTrigger ref={plannerTriggerRef} aria-label="Planner instance">
-                  <SelectValue placeholder="Pick an instance" />
+                  <SelectValue placeholder="Pick an instance">
+                    {plannerEntry?.displayName ?? "Pick an instance"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {readyEntries.map((entry) => (
@@ -288,7 +290,11 @@ export function CrewEditorDialog(props: {
                 }}
               >
                 <SelectTrigger aria-label="Planner model">
-                  <SelectValue placeholder="Pick a model" />
+                  <SelectValue placeholder="Pick a model">
+                    {plannerEntry?.models.find((model) => model.slug === plannerModel)?.name ??
+                      plannerModel ??
+                      "Pick a model"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {plannerEntry?.models.map((model) => (
@@ -312,7 +318,11 @@ export function CrewEditorDialog(props: {
                 }}
               >
                 <SelectTrigger aria-label="Planner effort">
-                  <SelectValue placeholder="Effort" />
+                  <SelectValue placeholder="Effort">
+                    {effortDescriptor?.options.find((option) => option.id === effortValue)?.label ??
+                      (typeof effortValue === "string" ? effortValue : null) ??
+                      "Effort"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {effortDescriptor?.options.map((option) => (
@@ -354,7 +364,9 @@ export function CrewEditorDialog(props: {
                       ref={index === 0 ? firstMemberTriggerRef : undefined}
                       aria-label={`Crew member ${index + 1} instance`}
                     >
-                      <SelectValue placeholder="Pick an instance" />
+                      <SelectValue placeholder="Pick an instance">
+                        {entry?.displayName ?? "Pick an instance"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectPopup>
                       {readyEntries.map((candidate) => (
@@ -378,7 +390,12 @@ export function CrewEditorDialog(props: {
                     }}
                   >
                     <SelectTrigger aria-label={`Crew member ${index + 1} model`}>
-                      <SelectValue />
+                      <SelectValue>
+                        {member.model
+                          ? (entry?.models.find((model) => model.slug === member.model)?.name ??
+                            member.model)
+                          : "Default model"}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectPopup>
                       <SelectItem value="__default__">Default model</SelectItem>

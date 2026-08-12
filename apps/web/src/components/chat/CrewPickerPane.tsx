@@ -137,7 +137,7 @@ export function CrewPickerPane(props: {
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {!props.favoriteOnly ? (
+      {!props.favoriteOnly && crews.length > 0 ? (
         <div className="border-b px-4 py-3">
           <div className="text-sm font-semibold">Crews</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
