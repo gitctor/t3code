@@ -164,6 +164,66 @@ it.layer(kimiAdapterTestLayer)("KimiAdapterLive", (it) => {
     }),
   );
 
+  it.effect("steers a running turn through the active ACP session", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("kimi-steer-thread");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockKimiWrapper({ T3_ACP_PROMPT_DELAY_MS: "1500" }),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+      const runtimeEvents: ProviderRuntimeEvent[] = [];
+      const turnStarted = yield* Deferred.make<void>();
+      const turnCompleted = yield* Deferred.make<void>();
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }).pipe(
+          Effect.andThen(
+            event.threadId === threadId && event.type === "turn.started"
+              ? Deferred.succeed(turnStarted, undefined)
+              : event.threadId === threadId && event.type === "turn.completed"
+                ? Deferred.succeed(turnCompleted, undefined)
+                : Effect.void,
+          ),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("kimi"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      const firstTurnFiber = yield* adapter
+        .sendTurn({ threadId, input: "inspect the current implementation" })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(turnStarted);
+
+      const steeredTurn = yield* adapter.sendTurn({
+        threadId,
+        input: "also verify the dispatch lifecycle",
+      });
+      const firstTurn = yield* Fiber.join(firstTurnFiber);
+      yield* Deferred.await(turnCompleted);
+      yield* Fiber.interrupt(runtimeEventsFiber);
+
+      assert.equal(String(steeredTurn.turnId), String(firstTurn.turnId));
+      const turnEvents = runtimeEvents.filter(
+        (event) =>
+          event.threadId === threadId &&
+          (event.type === "turn.started" || event.type === "turn.completed"),
+      );
+      assert.deepStrictEqual(
+        turnEvents.map((event) => event.type),
+        ["turn.started", "turn.completed"],
+      );
+      assert.isTrue(turnEvents.every((event) => event.turnId === firstTurn.turnId));
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("rejects startSession without a cwd", () =>
     Effect.gen(function* () {
       const wrapperPath = yield* Effect.promise(() => makeMockKimiWrapper());
