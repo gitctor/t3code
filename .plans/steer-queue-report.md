@@ -86,7 +86,7 @@ Type checks:
 
 - `apps/server`: passed `tsgo --noEmit`.
 - `packages/contracts`: passed `tsgo --noEmit`.
-- `apps/web`: the committed tree passed `tsgo --noEmit` from a clean temporary archive. The live working tree is separately blocked by uncommitted crew-editor work.
+- `apps/web`: passed `tsgo --noEmit` in the live working tree, including the concurrent crew-editor edits.
 - `apps/mobile`: the committed tree still fails on existing React Navigation route inference across unrelated screens. The active-turn files and focused mobile tests pass.
 
 ## Visual QA checklist
