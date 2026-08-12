@@ -29,6 +29,7 @@ Fork-only follow-ups:
 - `249a4d3d9` verifies that Stop remains beside both active-turn send actions.
 - `7ca914428` initially tested overlapping Kimi prompts against the generic mock ACP agent. That mock did not model Kimi's single mutable turn state.
 - `4ef42cdee` replaces that unsafe assumption with an explicit Kimi and unknown-provider Queue fallback. It also adds direct Grok steering coverage.
+- `9f54fa842` persists `crewId` in the web FIFO and restores it on delivery. This keeps queued planner turns authorized for crew orchestration, including Kimi's mandatory Queue fallback.
 
 Original PR author ClapFy is preserved as author and credited with `Co-authored-by` on adapted commits.
 
@@ -54,6 +55,8 @@ Web outbox keys include both environment and thread IDs, so parent and child FIF
 The planner composer remains the outer `ChatView` and resolves its target from `activeThread.id`.
 Opening a transcript drawer does not navigate or replace that parent thread.
 A steer from the planner composer therefore reaches the planner session, never a child session.
+Queued planner messages also persist the selected `crewId` with the environment and planner thread IDs.
+The outbox restores that `crewId` on the next turn command, so Queue does not strip crew orchestration access after settlement.
 
 Provider turn-start work is forked by `ProviderCommandReactor`, so a second child turn-start request can reach an active adapter.
 Steer-capable adapters keep the existing provider turn ID and do not emit a false new turn boundary.
@@ -80,7 +83,7 @@ This was not fixed here. Moving queue ownership to the server needs a wire contr
 Focused tests:
 
 - 21 test files passed.
-- 558 tests passed.
+- 560 tests passed.
 - This includes direct steer coverage for Claude, Codex, Cursor, Grok, and OpenCode, plus direct rejection coverage for a second active Kimi prompt.
 
 Type checks:
@@ -102,5 +105,6 @@ Test web, desktop, and mobile after the concurrent crew-editor work is complete.
 6. Open a running crew child transcript. Confirm its drawer composer has the same controls and sends only to that child.
 7. Keep the drawer open and steer from the parent composer. Confirm the message appears in the planner transcript, not the child transcript.
 8. Queue two messages on one thread and one on another. Confirm FIFO order is per thread.
-9. Repeat on mobile at the smallest supported phone width. Confirm the queue count and Stop action do not cover the send action.
-10. Background mobile with a queued message and record the known #5436 behavior for the follow-up server-owned queue work.
+9. Use Kimi as a crew planner. Queue a follow-up and confirm the next turn keeps the crew tools and can dispatch children.
+10. Repeat on mobile at the smallest supported phone width. Confirm the queue count and Stop action do not cover the send action.
+11. Background mobile with a queued message and record the known #5436 behavior for the follow-up server-owned queue work.
