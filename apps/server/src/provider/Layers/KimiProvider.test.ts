@@ -13,14 +13,15 @@ import { KimiSettings } from "@t3tools/contracts";
 import { buildInitialKimiProviderSnapshot, checkKimiProviderStatus } from "./KimiProvider.ts";
 
 const decodeKimiSettings = Schema.decodeSync(KimiSettings);
+const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 const isWin = process.platform === "win32";
 
 function writeFakeKimiBinary(
-  fs: FileSystem.FileSystem["Service"],
+  fs: FileSystem.FileSystem,
   dir: string,
-  path: Path.Path["Service"],
+  path: Path.Path,
   scriptBody: string,
-): Effect.Effect<string> {
+) {
   return Effect.gen(function* () {
     const jsPath = path.join(dir, "kimi.mjs");
     yield* fs.writeFileString(jsPath, scriptBody);
@@ -104,7 +105,7 @@ it.layer(NodeServices.layer)("checkKimiProviderStatus", (it) => {
             path,
             [
               "const args = process.argv.slice(2);",
-              `process.stderr.write(${JSON.stringify(secretStderr + "\\n")});`,
+              `process.stderr.write(${encodeJsonString(secretStderr + "\\n")});`,
               "process.exit(2);",
               "",
             ].join("\n"),
