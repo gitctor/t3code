@@ -68,6 +68,15 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  SUGGESTIONS_WS_METHODS,
+  TaskSuggestionAcceptResult,
+  TaskSuggestionActionInput,
+  TaskSuggestionActionResult,
+  TaskSuggestionError,
+  TaskSuggestionListInput,
+  TaskSuggestionListResult,
+} from "./taskSuggestion.ts";
+import {
   PullRequestActionInput,
   PullRequestActivity,
   PullRequestCommentInput,
@@ -914,6 +923,30 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsTaskSuggestionsListRpc = Rpc.make(SUGGESTIONS_WS_METHODS.list, {
+  payload: TaskSuggestionListInput,
+  success: TaskSuggestionListResult,
+  error: Schema.Union([TaskSuggestionError, EnvironmentAuthorizationError]),
+});
+
+export const WsTaskSuggestionsAcceptRpc = Rpc.make(SUGGESTIONS_WS_METHODS.accept, {
+  payload: TaskSuggestionActionInput,
+  success: TaskSuggestionAcceptResult,
+  error: Schema.Union([TaskSuggestionError, EnvironmentAuthorizationError]),
+});
+
+export const WsTaskSuggestionsDismissRpc = Rpc.make(SUGGESTIONS_WS_METHODS.dismiss, {
+  payload: TaskSuggestionActionInput,
+  success: TaskSuggestionActionResult,
+  error: Schema.Union([TaskSuggestionError, EnvironmentAuthorizationError]),
+});
+
+export const WsTaskSuggestionsRestoreRpc = Rpc.make(SUGGESTIONS_WS_METHODS.restore, {
+  payload: TaskSuggestionActionInput,
+  success: TaskSuggestionActionResult,
+  error: Schema.Union([TaskSuggestionError, EnvironmentAuthorizationError]),
+});
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -1061,4 +1094,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsTaskSuggestionsListRpc,
+  WsTaskSuggestionsAcceptRpc,
+  WsTaskSuggestionsDismissRpc,
+  WsTaskSuggestionsRestoreRpc,
 );

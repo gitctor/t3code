@@ -23,6 +23,17 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { Crew, CrewId, DispatchRecord } from "./orchestrationCrew.ts";
+import {
+  TaskSuggestionAcceptCommand,
+  TaskSuggestionAcceptedPayload,
+  TaskSuggestionCreateCommand,
+  TaskSuggestionCreatedPayload,
+  TaskSuggestionDismissCommand,
+  TaskSuggestionDismissedPayload,
+  TaskSuggestionId,
+  TaskSuggestionRestoreCommand,
+  TaskSuggestionRestoredPayload,
+} from "./taskSuggestion.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -1097,6 +1108,10 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  TaskSuggestionCreateCommand,
+  TaskSuggestionAcceptCommand,
+  TaskSuggestionDismissCommand,
+  TaskSuggestionRestoreCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
@@ -1117,6 +1132,10 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "suggestion.created",
+  "suggestion.accepted",
+  "suggestion.dismissed",
+  "suggestion.restored",
   "crew.created",
   "crew.updated",
   "crew.deleted",
@@ -1153,7 +1172,12 @@ export const OrchestrationEventType = Schema.Literals([
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["crew", "project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals([
+  "crew",
+  "project",
+  "thread",
+  "suggestion",
+]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1426,7 +1450,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([CrewId, ProjectId, ThreadId]),
+  aggregateId: Schema.Union([CrewId, ProjectId, ThreadId, TaskSuggestionId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1435,6 +1459,26 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("suggestion.created"),
+    payload: TaskSuggestionCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("suggestion.accepted"),
+    payload: TaskSuggestionAcceptedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("suggestion.dismissed"),
+    payload: TaskSuggestionDismissedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("suggestion.restored"),
+    payload: TaskSuggestionRestoredPayload,
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("crew.created"),
