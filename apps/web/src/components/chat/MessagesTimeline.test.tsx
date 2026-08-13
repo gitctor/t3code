@@ -1,4 +1,4 @@
-import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
+import { CheckpointRef, EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -230,6 +230,39 @@ function buildUserTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("renders cross-thread system audits as a compact source chip", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "cross-thread-audit",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("cross-thread-audit"),
+              role: "system",
+              text: "Message from Planner",
+              turnId: null,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: false,
+              crossThreadSource: {
+                messageId: MessageId.make("cross-thread-message"),
+                sourceThreadId: ThreadId.make("thread-planner"),
+                sourceThreadTitle: "Planner",
+              },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Message from Planner");
+    expect(markup).toContain('aria-label="Open source thread Planner"');
+    expect(markup).toContain("border-primary/20");
+  });
+
   it("matches the changed-files banner pattern and labels token totals", () => {
     const agent: RuntimeSubagent = {
       id: "agent-1",

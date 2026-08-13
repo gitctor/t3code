@@ -207,6 +207,27 @@ describe("EnvironmentProviderSettings routing", () => {
     ).toBeNull();
   });
 
+  it("updates the server-owned cross-thread messaging permission", () => {
+    settingsState.value = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      crossThreadMessaging: "crew",
+    };
+    const panel = renderPanel();
+    const row = visitElements(panel, (element) => element.props.title === "Cross-thread messaging");
+    expect(row?.props.description).toBe("Crew only — planners and their dispatched agents");
+
+    const select = visitElements(
+      row?.props.control,
+      (element) =>
+        element.props.value === "crew" && typeof element.props.onValueChange === "function",
+    );
+    expect(select).not.toBeNull();
+    (select?.props.onValueChange as ((value: string) => void) | undefined)?.("project");
+    expect(settingsState.updateSettings).toHaveBeenCalledWith({
+      crossThreadMessaging: "project",
+    });
+  });
+
   it("deletes and resets provider configuration without erasing shared preferences", () => {
     settingsState.value = {
       ...DEFAULT_UNIFIED_SETTINGS,

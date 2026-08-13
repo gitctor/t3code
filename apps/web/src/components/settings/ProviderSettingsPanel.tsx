@@ -7,6 +7,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   defaultInstanceIdForDriver,
+  type CrossThreadMessagingLevel,
   type EnvironmentId,
   type Crew,
   PROVIDER_DISPLAY_NAMES,
@@ -68,6 +69,7 @@ import {
   type ProviderUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -126,6 +128,12 @@ function withoutProviderInstanceFavorites(
 const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
   provider: definition.value,
 }));
+
+const CROSS_THREAD_MESSAGING_OPTIONS = {
+  off: "Off — threads stay isolated",
+  crew: "Crew only — planners and their dispatched agents",
+  project: "Project — any thread in the same project",
+} satisfies Record<CrossThreadMessagingLevel, string>;
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
@@ -738,6 +746,36 @@ export function EnvironmentProviderSettings({
           aria-disabled={readOnly || undefined}
           className={readOnly ? "space-y-1 opacity-50 select-none" : "space-y-1"}
         >
+          <SettingsRow
+            title="Cross-thread messaging"
+            description={CROSS_THREAD_MESSAGING_OPTIONS[settings.crossThreadMessaging]}
+            control={
+              <Select
+                value={settings.crossThreadMessaging}
+                onValueChange={(value) =>
+                  updateSettings({ crossThreadMessaging: value as CrossThreadMessagingLevel })
+                }
+              >
+                <SelectTrigger
+                  className="w-full sm:w-72"
+                  aria-label="Cross-thread messaging permission"
+                >
+                  <SelectValue>
+                    {CROSS_THREAD_MESSAGING_OPTIONS[settings.crossThreadMessaging]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {(Object.keys(CROSS_THREAD_MESSAGING_OPTIONS) as CrossThreadMessagingLevel[]).map(
+                    (level) => (
+                      <SelectItem key={level} hideIndicator value={level}>
+                        {CROSS_THREAD_MESSAGING_OPTIONS[level]}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectPopup>
+              </Select>
+            }
+          />
           <SettingsRow
             title={
               <span className="inline-flex items-center gap-1.5">

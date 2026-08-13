@@ -46,6 +46,10 @@ A user-visible log item attached to a thread. In [the contracts][1], activities 
 
 An agent-proposed follow-up task that requires operator approval before it runs. A suggestion belongs to its source thread and turn. It stays pending until the operator accepts or dismisses it. Accepting creates a new thread and worktree through the normal turn bootstrap path. See [the task suggestion contracts][25] and the [user guide][26].
 
+#### Cross-thread message
+
+A server-attributed message from one active thread turn to another existing thread. The operator selects an `off`, `crew`, or `project` scope. The lifecycle is event-sourced, queued delivery is durable and FIFO per target thread, and deliveries or rejections are visible in thread timelines. See [the messaging contracts][27] and the [user guide][28].
+
 ### Orchestration
 
 Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
@@ -185,3 +189,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [24]: ./overview.md
 [25]: ../../packages/contracts/src/taskSuggestion.ts
 [26]: ../user/suggested-tasks.md
+[27]: ../../packages/contracts/src/threadMessage.ts
+[28]: ../user/cross-thread-messaging.md

@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type CrossThreadTranscriptSource,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
@@ -16,6 +17,7 @@ import {
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_TASK_SUGGESTION = (_suggestion: TaskSuggestion) => {};
+const NOOP_CROSS_THREAD_SOURCE = (_source: CrossThreadTranscriptSource) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -154,6 +156,7 @@ interface TimelineRowSharedState {
   onDismissTaskSuggestion: (suggestion: TaskSuggestion) => void;
   onOpenTaskSuggestion: (suggestion: TaskSuggestion) => void;
   onRestoreTaskSuggestion: (suggestion: TaskSuggestion) => void;
+  onOpenCrossThreadSource: (source: CrossThreadTranscriptSource) => void;
 }
 
 interface TimelineRowActivityState {
@@ -261,6 +264,7 @@ interface MessagesTimelineProps {
   onDismissTaskSuggestion?: (suggestion: TaskSuggestion) => void;
   onOpenTaskSuggestion?: (suggestion: TaskSuggestion) => void;
   onRestoreTaskSuggestion?: (suggestion: TaskSuggestion) => void;
+  onOpenCrossThreadSource?: (source: CrossThreadTranscriptSource) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +311,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onDismissTaskSuggestion = NOOP_TASK_SUGGESTION,
   onOpenTaskSuggestion = NOOP_TASK_SUGGESTION,
   onRestoreTaskSuggestion = NOOP_TASK_SUGGESTION,
+  onOpenCrossThreadSource = NOOP_CROSS_THREAD_SOURCE,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -552,6 +557,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onDismissTaskSuggestion,
       onOpenTaskSuggestion,
       onRestoreTaskSuggestion,
+      onOpenCrossThreadSource,
     }),
     [
       timestampFormat,
@@ -574,6 +580,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onDismissTaskSuggestion,
       onOpenTaskSuggestion,
       onRestoreTaskSuggestion,
+      onOpenCrossThreadSource,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -992,6 +999,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
+      {row.kind === "message" && row.message.role === "system" ? (
+        <SystemTimelineRow row={row} />
+      ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
       {row.kind === "task-suggestions" ? <TaskSuggestionsTimelineRow row={row} /> : null}
@@ -999,6 +1009,37 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     </div>
   );
 });
+
+function SystemTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  const source = row.message.crossThreadSource;
+  if (!source) {
+    if (!row.message.text.startsWith("Cross-thread message rejected:")) {
+      return null;
+    }
+    return (
+      <div className="flex justify-center px-3">
+        <span className="rounded-full bg-muted/55 px-2.5 py-1 text-xs text-muted-foreground">
+          {row.message.text}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-center px-3">
+      <button
+        type="button"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        aria-label={`Open source thread ${source.sourceThreadTitle}`}
+        onClick={() => ctx.onOpenCrossThreadSource(source)}
+      >
+        <MessageCircleIcon className="size-3.5 shrink-0" aria-hidden />
+        <span className="truncate">Message from {source.sourceThreadTitle}</span>
+      </button>
+    </div>
+  );
+}
 
 function TaskSuggestionsTimelineRow({
   row,

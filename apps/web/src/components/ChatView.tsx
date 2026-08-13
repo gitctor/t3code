@@ -1,6 +1,7 @@
 import {
   type ApprovalRequestId,
   type Crew,
+  type CrossThreadTranscriptSource,
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
@@ -6285,6 +6286,18 @@ function ChatViewContent(props: ChatViewProps) {
     }
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
+  const onOpenCrossThreadSource = useCallback(
+    (source: CrossThreadTranscriptSource) => {
+      if (!activeThread) return;
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(
+          scopeThreadRef(activeThread.environmentId, source.sourceThreadId),
+        ),
+      });
+    },
+    [activeThread, navigate],
+  );
 
   // Empty state: no active thread
   if (!activeThread) {
@@ -6585,6 +6598,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onRestoreTaskSuggestion={(suggestion) => {
                   void handleRestoreTaskSuggestion(suggestion);
                 }}
+                onOpenCrossThreadSource={onOpenCrossThreadSource}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}

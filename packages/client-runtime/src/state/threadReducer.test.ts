@@ -335,6 +335,38 @@ describe("applyThreadDetailEvent", () => {
       }
     });
 
+    it("retains cross-thread attribution on live system audit events", () => {
+      const crossThreadSource = {
+        messageId: MessageId.make("cross-thread-message"),
+        sourceThreadId: ThreadId.make("thread-source"),
+        sourceThreadTitle: "Source planner",
+      };
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-08-12T12:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("cross-thread-audit"),
+          role: "system",
+          text: "Message from Source planner",
+          crossThreadSource,
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-08-12T12:00:00.000Z",
+          updatedAt: "2026-08-12T12:00:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages[0]?.crossThreadSource).toEqual(crossThreadSource);
+      }
+    });
+
     it("appends text for streaming messages", () => {
       const threadWithMessage: OrchestrationThread = {
         ...baseThread,
