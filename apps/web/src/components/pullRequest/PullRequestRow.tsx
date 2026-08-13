@@ -1,4 +1,5 @@
 import type { PullRequestListEntry } from "@t3tools/contracts";
+import { ArrowLeftIcon } from "lucide-react";
 
 import { memo } from "react";
 
@@ -71,8 +72,16 @@ function PullRequestRowImpl({
           </span>
           {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
           <PullRequestActorLabel actor={entry.author} className="max-w-40 shrink-0" />
-          <span className="truncate" title={`${entry.headBranch} to ${entry.baseBranch}`}>
-            {entry.headBranch}
+          <span
+            className="flex min-w-0 items-center gap-1 font-mono"
+            title={`${entry.baseBranch} ← ${entry.headBranch}`}
+          >
+            <span className="truncate font-semibold text-foreground">{entry.baseBranch}</span>
+            <ArrowLeftIcon
+              aria-label="receives changes from"
+              className="size-3 shrink-0 text-muted-foreground/70"
+            />
+            <span className="truncate text-muted-foreground">{entry.headBranch}</span>
           </span>
           {matchedElsewhere ? (
             <span className="shrink-0 rounded-full border border-border/60 px-1.5 text-[10px]">

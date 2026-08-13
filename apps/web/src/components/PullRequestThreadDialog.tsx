@@ -1,6 +1,7 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { useDebouncedValue } from "@tanstack/react-pacer";
+import { ArrowLeftIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -235,10 +236,21 @@ export function PullRequestThreadDialog({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate font-medium text-sm">{resolvedPullRequest.title}</p>
-                  <p className="truncate text-muted-foreground text-xs">
-                    #{resolvedPullRequest.number} · {resolvedPullRequest.headBranch} to{" "}
-                    {resolvedPullRequest.baseBranch}
-                  </p>
+                  <div className="flex min-w-0 items-center gap-1 text-xs">
+                    <span className="shrink-0 text-muted-foreground">
+                      #{resolvedPullRequest.number} ·
+                    </span>
+                    <span className="truncate font-mono font-semibold text-foreground">
+                      {resolvedPullRequest.baseBranch}
+                    </span>
+                    <ArrowLeftIcon
+                      aria-label="receives changes from"
+                      className="size-3 shrink-0 text-muted-foreground/70"
+                    />
+                    <span className="truncate font-mono text-muted-foreground">
+                      {resolvedPullRequest.headBranch}
+                    </span>
+                  </div>
                 </div>
                 <span className={cn("shrink-0 text-xs capitalize", statusTone)}>
                   {resolvedPullRequest.state}

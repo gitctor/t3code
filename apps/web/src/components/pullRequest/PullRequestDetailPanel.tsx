@@ -1055,9 +1055,14 @@ export function PullRequestDetailPanel({
                   className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-[11px] text-muted-foreground"
                   title={`${detail.baseBranch} ← ${detail.headBranch}`}
                 >
-                  <span className="truncate">{detail.baseBranch}</span>
-                  <ArrowLeftIcon aria-label="receives changes from" className="size-3 shrink-0" />
-                  <span className="truncate">{detail.headBranch}</span>
+                  <span className="truncate font-semibold text-foreground">
+                    {detail.baseBranch}
+                  </span>
+                  <ArrowLeftIcon
+                    aria-label="receives changes from"
+                    className="size-3 shrink-0 text-muted-foreground/70"
+                  />
+                  <span className="truncate text-muted-foreground">{detail.headBranch}</span>
                 </span>
                 <span className="ml-2 inline-flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1 tabular-nums">
@@ -1110,15 +1115,18 @@ export function PullRequestDetailPanel({
 
                 <div className="mt-4 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <code
-                    className="min-w-0 max-w-48 shrink truncate rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground"
+                    className="min-w-0 max-w-48 shrink truncate rounded-md bg-muted px-2 py-1 font-mono text-xs font-semibold text-foreground"
                     title={detail.baseBranch}
                   >
                     {detail.baseBranch}
                   </code>
-                  <ArrowLeftIcon aria-label="receives changes from" className="size-4 shrink-0" />
+                  <ArrowLeftIcon
+                    aria-label="receives changes from"
+                    className="size-4 shrink-0 text-muted-foreground/70"
+                  />
                   <button
                     type="button"
-                    className="grid min-w-0 max-w-64 shrink cursor-pointer rounded-md bg-muted px-2 py-1 font-mono text-xs text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                    className="grid min-w-0 max-w-64 shrink cursor-pointer rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                     aria-label={isBranchCopied ? "Branch name copied" : "Copy pull request branch"}
                     title={isBranchCopied ? "Copied" : "Copy pull request branch"}
                     onClick={() => copyBranchToClipboard(detail.headBranch)}
