@@ -19,7 +19,6 @@ import {
   LayersIcon,
   PenLineIcon,
   LoaderIcon,
-  RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -61,6 +60,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
 import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
+import { PageRefreshButton } from "../components/PageRefreshButton";
 import { Button } from "../components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../components/ui/menu";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -1467,14 +1467,11 @@ function PullRequestsColumn({
             }}
           />
         ) : null}
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Refresh pull requests"
-          onClick={onRefresh}
-        >
-          <RefreshCwIcon className={cn("size-4", refreshing && "animate-spin")} />
-        </Button>
+        <PageRefreshButton
+          label="Refresh pull requests"
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        />
         {rightPanelControl}
       </header>
 

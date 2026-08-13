@@ -1,8 +1,8 @@
 import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
-import { RefreshCwIcon, SmartphoneIcon } from "lucide-react";
+import { SmartphoneIcon } from "lucide-react";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
-import { cn } from "../../lib/utils";
+import { PageRefreshButton } from "../PageRefreshButton";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -120,15 +120,11 @@ export function MobileClientsUserProfilePage() {
             Devices registered to receive T3 Connect activity from your environments.
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={devicesState.isPending}
-          onClick={devicesState.refresh}
-        >
-          <RefreshCwIcon className={cn("size-3.5", devicesState.isPending && "animate-spin")} />
-          Refresh
-        </Button>
+        <PageRefreshButton
+          label="Refresh mobile clients"
+          refreshing={devicesState.isPending}
+          onRefresh={devicesState.refresh}
+        />
       </header>
 
       <div className="flex-1 p-6">

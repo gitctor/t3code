@@ -1,5 +1,5 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
@@ -24,6 +24,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
+import { PageRefreshButton } from "../PageRefreshButton";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { AccountLimitsSection } from "./AccountLimits";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
@@ -123,6 +124,11 @@ export function UsagePage() {
             <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
               <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
+            <PageRefreshButton
+              label="Refresh usage"
+              refreshing={settling}
+              onRefresh={refreshWindow}
+            />
           </header>
         )}
 
@@ -136,6 +142,11 @@ export function UsagePage() {
             <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
               <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
+            <PageRefreshButton
+              label="Refresh usage"
+              refreshing={settling}
+              onRefresh={refreshWindow}
+            />
           </div>
         )}
 
@@ -147,32 +158,22 @@ export function UsagePage() {
                   ? `${formatDateTimeShort(window.sinceTime, window.timeZone)} to ${formatDateTimeShort(window.untilTime, window.timeZone)}`
                   : `${formatDayShort(window.sinceDay)} to ${formatDayShort(window.untilDay)}`}
               </p>
-              <div className="flex items-center gap-2">
-                <ToggleGroup
-                  aria-label="Usage time range"
-                  size="sm"
-                  variant="ghost"
-                  value={[String(windowDays)]}
-                  onValueChange={(value) => {
-                    const days = Number(value[0]);
-                    if (WINDOW_OPTIONS.some((option) => option.days === days)) selectWindow(days);
-                  }}
-                >
-                  {WINDOW_OPTIONS.map((option) => (
-                    <Toggle key={option.days} value={String(option.days)} className="px-3 text-xs">
-                      {option.label}
-                    </Toggle>
-                  ))}
-                </ToggleGroup>
-                <button
-                  type="button"
-                  onClick={refreshWindow}
-                  aria-label="Refresh usage"
-                  className="cursor-pointer rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
-                >
-                  <RefreshCwIcon className="size-3.5" />
-                </button>
-              </div>
+              <ToggleGroup
+                aria-label="Usage time range"
+                size="sm"
+                variant="ghost"
+                value={[String(windowDays)]}
+                onValueChange={(value) => {
+                  const days = Number(value[0]);
+                  if (WINDOW_OPTIONS.some((option) => option.days === days)) selectWindow(days);
+                }}
+              >
+                {WINDOW_OPTIONS.map((option) => (
+                  <Toggle key={option.days} value={String(option.days)} className="px-3 text-xs">
+                    {option.label}
+                  </Toggle>
+                ))}
+              </ToggleGroup>
             </div>
 
             {/* Limits use the passive provider-event cache, so they can render
