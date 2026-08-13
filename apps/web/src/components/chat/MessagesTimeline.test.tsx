@@ -3,6 +3,10 @@ import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
+import type {
+  AgentPanelModel,
+  RuntimeSubagent,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -226,6 +230,77 @@ function buildUserTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("matches the changed-files banner pattern and labels token totals", () => {
+    const agent: RuntimeSubagent = {
+      id: "agent-1",
+      kind: "subagent",
+      title: "Design QA",
+      role: null,
+      model: "gpt-5.6-sol",
+      effort: null,
+      status: "completed",
+      activationCount: 1,
+      usage: { totalTokens: 176_600_000 },
+      progress: null,
+      lastToolName: null,
+      result: "Done",
+      error: null,
+      outputFile: null,
+      parentAgentId: null,
+      agentIndex: 0,
+      phaseIndex: null,
+      phaseTitle: null,
+      attempt: null,
+      workflowName: null,
+      phases: [],
+      runHandles: null,
+      recentActivity: [],
+      firstSeenAt: MESSAGE_CREATED_AT,
+      startedAt: MESSAGE_CREATED_AT,
+      completedAt: MESSAGE_CREATED_AT,
+      updatedAt: MESSAGE_CREATED_AT,
+    };
+    const agentPanelModel: AgentPanelModel = {
+      workflows: [],
+      directAgents: [agent],
+      runningCount: 0,
+      waitingCount: 0,
+      idleCount: 0,
+      settledCount: 1,
+      totalTokens: 176_600_000,
+      hasAgents: true,
+      liveCount: 0,
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        agentPanelModel={agentPanelModel}
+        timelineEntries={[
+          {
+            id: "spawn-agent-1",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "spawn-agent-1",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId: null,
+              label: "Started Design QA",
+              tone: "info",
+              taskId: "agent-1",
+              agentSpawn: { workflowId: null, agentTaskIds: ["agent-1"] },
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-subagents-banner=""');
+    expect(markup).toContain("rounded-2xl border border-border/70 bg-secondary p-2");
+    expect(markup).toContain("176.6M tokens");
+    expect(markup).not.toContain("Σ");
+    expect(markup).toContain('aria-label="View agents"');
+  });
+
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
 

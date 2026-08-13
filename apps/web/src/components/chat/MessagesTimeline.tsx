@@ -2267,25 +2267,40 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
       : "✓ completed";
 
   return (
-    <button
-      type="button"
-      onClick={onOpenAgents}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
+    <div
+      className="rounded-2xl border border-border/70 bg-secondary p-2 dark:border-transparent dark:bg-input/32"
+      data-subagents-banner=""
     >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
-      <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate">
-        <span className="font-medium">{lead}</span>
-        {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
-      </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground">
-        <span>{status}</span>
-        {totalTokens > 0 ? (
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
-        ) : null}
-        <span className="text-info-foreground">{live ? "Open Agents ▸" : "View ▸"}</span>
-      </span>
-    </button>
+      <div className="flex items-center justify-between gap-2 rounded-xl px-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1.5 text-xs leading-4">
+          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
+          <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate font-medium text-foreground">
+            {lead}
+            {workflowName ? (
+              <span className="font-normal text-muted-foreground"> · {workflowName}</span>
+            ) : null}
+          </span>
+          <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+            {status}
+          </span>
+          {totalTokens > 0 ? (
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+              {formatSubagentTokenCount(totalTokens)} tokens
+            </span>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-label={live ? "Open agents" : "View agents"}
+          onClick={onOpenAgents}
+        >
+          {live ? "Open agents" : "View"}
+        </Button>
+      </div>
+    </div>
   );
 });
 
