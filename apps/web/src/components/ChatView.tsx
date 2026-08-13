@@ -15,6 +15,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type TaskSuggestion,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -205,7 +206,7 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { buildDraftThreadRouteParams } from "../threadRoutes";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
@@ -238,6 +239,7 @@ import {
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
+import { taskSuggestionEnvironment } from "../state/taskSuggestions";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
@@ -1238,6 +1240,15 @@ function ChatViewContent(props: ChatViewProps) {
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
+  const acceptTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.accept, {
+    reportFailure: false,
+  });
+  const dismissTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.dismiss, {
+    reportFailure: false,
+  });
+  const restoreTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.restore, {
+    reportFailure: false,
+  });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const { environments } = useEnvironments();
@@ -1300,6 +1311,10 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
+  const taskSuggestionQuery = useEnvironmentQuery(
+    routeKind === "server" ? taskSuggestionEnvironment.list({ environmentId, input: {} }) : null,
+  );
+  const [busySuggestionIds, setBusySuggestionIds] = useState<ReadonlySet<string>>(() => new Set());
   const { resolvedTheme } = useTheme();
   // Granular store selectors — avoid subscribing to prompt changes.
   const composerRuntimeMode = useComposerDraftStore(
@@ -1667,6 +1682,115 @@ function ChatViewContent(props: ChatViewProps) {
     return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
   }, [draftThreadKeys, openTerminalThreadKeys, serverThreadKeys]);
   const activeLatestTurn = activeThread?.latestTurn ?? null;
+  const activeTaskSuggestions = useMemo(
+    () =>
+      (taskSuggestionQuery.data?.suggestions ?? []).filter(
+        (suggestion) => suggestion.sourceThreadId === activeThread?.id,
+      ),
+    [activeThread?.id, taskSuggestionQuery.data?.suggestions],
+  );
+  const completedSuggestionTurnId = activeLatestTurn?.completedAt ? activeLatestTurn.turnId : null;
+  const refreshedSuggestionTurnRef = useRef<TurnId | null>(completedSuggestionTurnId);
+  useEffect(() => {
+    if (
+      completedSuggestionTurnId === null ||
+      refreshedSuggestionTurnRef.current === completedSuggestionTurnId
+    ) {
+      return;
+    }
+    refreshedSuggestionTurnRef.current = completedSuggestionTurnId;
+    taskSuggestionQuery.refresh();
+  }, [completedSuggestionTurnId, taskSuggestionQuery.refresh]);
+
+  const setTaskSuggestionBusy = useCallback((suggestionId: string, busy: boolean) => {
+    setBusySuggestionIds((current) => {
+      const next = new Set(current);
+      if (busy) next.add(suggestionId);
+      else next.delete(suggestionId);
+      return next;
+    });
+  }, []);
+  const reportTaskSuggestionFailure = useCallback(
+    (title: string, result: AtomCommandResult<unknown, unknown>) => {
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title,
+          description:
+            error instanceof Error ? error.message : "The task suggestion could not be updated.",
+        }),
+      );
+    },
+    [],
+  );
+  const handleAcceptTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await acceptTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        if (result._tag === "Success") {
+          await navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(
+              scopeThreadRef(suggestion.environmentId, result.value.threadId),
+            ),
+          });
+          return;
+        }
+        reportTaskSuggestionFailure("Could not accept suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [acceptTaskSuggestion, navigate, reportTaskSuggestionFailure, setTaskSuggestionBusy],
+  );
+  const handleDismissTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await dismissTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        reportTaskSuggestionFailure("Could not dismiss suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [dismissTaskSuggestion, reportTaskSuggestionFailure, setTaskSuggestionBusy],
+  );
+  const handleRestoreTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await restoreTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        reportTaskSuggestionFailure("Could not restore suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [reportTaskSuggestionFailure, restoreTaskSuggestion, setTaskSuggestionBusy],
+  );
+  const handleOpenTaskSuggestion = useCallback(
+    (suggestion: TaskSuggestion) => {
+      if (suggestion.acceptedThreadId === undefined) return;
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(
+          scopeThreadRef(suggestion.environmentId, suggestion.acceptedThreadId),
+        ),
+      });
+    },
+    [navigate],
+  );
   // Reading a finished thread clears the sidebar's Done badge. The visit is
   // stamped at the turn's completion time — not now/updatedAt — so it clears
   // exactly the completion the user is looking at: a wake or completion that
@@ -6448,6 +6572,19 @@ function ChatViewContent(props: ChatViewProps) {
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
+                taskSuggestions={activeTaskSuggestions}
+                providerEntryByInstanceId={providerEntryByInstanceId}
+                busySuggestionIds={busySuggestionIds}
+                onAcceptTaskSuggestion={(suggestion) => {
+                  void handleAcceptTaskSuggestion(suggestion);
+                }}
+                onDismissTaskSuggestion={(suggestion) => {
+                  void handleDismissTaskSuggestion(suggestion);
+                }}
+                onOpenTaskSuggestion={handleOpenTaskSuggestion}
+                onRestoreTaskSuggestion={(suggestion) => {
+                  void handleRestoreTaskSuggestion(suggestion);
+                }}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}

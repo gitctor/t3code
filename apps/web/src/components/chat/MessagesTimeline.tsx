@@ -3,6 +3,7 @@ import {
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
+  type TaskSuggestion,
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -14,6 +15,7 @@ import {
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
+const NOOP_TASK_SUGGESTION = (_suggestion: TaskSuggestion) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
@@ -106,6 +108,8 @@ import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
+import type { ProviderInstanceEntry } from "../../providerInstances";
+import { TaskSuggestionCard } from "../taskSuggestions/TaskSuggestionCard";
 
 import {
   buildInlineTerminalContextText,
@@ -144,6 +148,12 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+  busySuggestionIds: ReadonlySet<string>;
+  onAcceptTaskSuggestion: (suggestion: TaskSuggestion) => void;
+  onDismissTaskSuggestion: (suggestion: TaskSuggestion) => void;
+  onOpenTaskSuggestion: (suggestion: TaskSuggestion) => void;
+  onRestoreTaskSuggestion: (suggestion: TaskSuggestion) => void;
 }
 
 interface TimelineRowActivityState {
@@ -188,6 +198,9 @@ function TimelineLoadEarlierHeader({
 }
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_TASK_SUGGESTIONS: ReadonlyArray<TaskSuggestion> = [];
+const EMPTY_BUSY_SUGGESTION_IDS: ReadonlySet<string> = new Set();
+const EMPTY_PROVIDER_ENTRY_MAP: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -241,6 +254,13 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
+  taskSuggestions?: ReadonlyArray<TaskSuggestion>;
+  providerEntryByInstanceId?: ReadonlyMap<string, ProviderInstanceEntry>;
+  busySuggestionIds?: ReadonlySet<string>;
+  onAcceptTaskSuggestion?: (suggestion: TaskSuggestion) => void;
+  onDismissTaskSuggestion?: (suggestion: TaskSuggestion) => void;
+  onOpenTaskSuggestion?: (suggestion: TaskSuggestion) => void;
+  onRestoreTaskSuggestion?: (suggestion: TaskSuggestion) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +300,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
+  taskSuggestions = EMPTY_TASK_SUGGESTIONS,
+  providerEntryByInstanceId = EMPTY_PROVIDER_ENTRY_MAP,
+  busySuggestionIds = EMPTY_BUSY_SUGGESTION_IDS,
+  onAcceptTaskSuggestion = NOOP_TASK_SUGGESTION,
+  onDismissTaskSuggestion = NOOP_TASK_SUGGESTION,
+  onOpenTaskSuggestion = NOOP_TASK_SUGGESTION,
+  onRestoreTaskSuggestion = NOOP_TASK_SUGGESTION,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -405,6 +432,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
+        taskSuggestions,
       }),
     [
       timelineEntries,
@@ -416,6 +444,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
+      taskSuggestions,
     ],
   );
   const rows = useStableRows(rawRows);
@@ -517,6 +546,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      providerEntryByInstanceId,
+      busySuggestionIds,
+      onAcceptTaskSuggestion,
+      onDismissTaskSuggestion,
+      onOpenTaskSuggestion,
+      onRestoreTaskSuggestion,
     }),
     [
       timestampFormat,
@@ -533,6 +568,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      providerEntryByInstanceId,
+      busySuggestionIds,
+      onAcceptTaskSuggestion,
+      onDismissTaskSuggestion,
+      onOpenTaskSuggestion,
+      onRestoreTaskSuggestion,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -953,10 +994,47 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
+      {row.kind === "task-suggestions" ? <TaskSuggestionsTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
     </div>
   );
 });
+
+function TaskSuggestionsTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "task-suggestions" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <section
+      aria-label="Suggested tasks"
+      className="rounded-2xl border border-border/50 bg-muted/20 p-3"
+    >
+      <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Suggested tasks
+      </h3>
+      <div className="grid gap-2">
+        {row.suggestions.map((suggestion) => (
+          <TaskSuggestionCard
+            key={suggestion.suggestionId}
+            suggestion={suggestion}
+            providerEntry={
+              suggestion.instanceId === undefined
+                ? null
+                : (ctx.providerEntryByInstanceId.get(suggestion.instanceId) ?? null)
+            }
+            busy={ctx.busySuggestionIds.has(suggestion.suggestionId)}
+            onAccept={ctx.onAcceptTaskSuggestion}
+            onDismiss={ctx.onDismissTaskSuggestion}
+            onOpen={ctx.onOpenTaskSuggestion}
+            onRestore={ctx.onRestoreTaskSuggestion}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);

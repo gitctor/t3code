@@ -29,7 +29,7 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { ScopedThreadRef, TaskSuggestion, ThreadId } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
@@ -71,6 +71,7 @@ import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
+  type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { isElectron } from "../env";
 import {
@@ -108,8 +109,9 @@ import { useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
+import { taskSuggestionEnvironment } from "../state/taskSuggestions";
 import { useEnvironmentQuery } from "../state/query";
-import { useCrewThreadMetadata } from "../state/queries";
+import { useCrewThreadMetadata, useTaskSuggestions } from "../state/queries";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   buildThreadRouteParams,
@@ -178,6 +180,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./u
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { TaskSuggestionsPopover } from "./taskSuggestions/TaskSuggestionsPopover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
   composerDraftHasUserContent,
@@ -1630,6 +1633,15 @@ export default function Sidebar() {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const acceptTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.accept, {
+    reportFailure: false,
+  });
+  const dismissTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.dismiss, {
+    reportFailure: false,
+  });
+  const restoreTaskSuggestion = useAtomCommand(taskSuggestionEnvironment.restore, {
+    reportFailure: false,
+  });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({
@@ -1727,6 +1739,8 @@ export default function Sidebar() {
     [environments],
   );
   const crewThreadMetadata = useCrewThreadMetadata(connectedEnvironmentIds);
+  const { suggestions: taskSuggestions } = useTaskSuggestions(connectedEnvironmentIds);
+  const [busySuggestionIds, setBusySuggestionIds] = useState<ReadonlySet<string>>(() => new Set());
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
@@ -1892,6 +1906,21 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  const visibleTaskSuggestions = useMemo(() => {
+    const threadBySuggestionSource = new Map(
+      threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread] as const),
+    );
+    return taskSuggestions.filter((suggestion) => {
+      if (scopedProjectKeys === null) return true;
+      const sourceThread = threadBySuggestionSource.get(
+        `${suggestion.environmentId}:${suggestion.sourceThreadId}`,
+      );
+      return (
+        sourceThread !== undefined &&
+        scopedProjectKeys.has(`${sourceThread.environmentId}:${sourceThread.projectId}`)
+      );
+    });
+  }, [scopedProjectKeys, taskSuggestions, threads]);
   useEffect(() => {
     if (projectScopeKey !== null && scopedProjectGroup === null) {
       setProjectScopeKey(null);
@@ -2257,6 +2286,85 @@ export default function Sidebar() {
       });
     },
     [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
+  );
+  const setTaskSuggestionBusy = useCallback((suggestionId: string, busy: boolean) => {
+    setBusySuggestionIds((current) => {
+      const next = new Set(current);
+      if (busy) next.add(suggestionId);
+      else next.delete(suggestionId);
+      return next;
+    });
+  }, []);
+  const reportTaskSuggestionFailure = useCallback(
+    (title: string, result: AtomCommandResult<unknown, unknown>) => {
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title,
+          description:
+            error instanceof Error ? error.message : "The task suggestion could not be updated.",
+        }),
+      );
+    },
+    [],
+  );
+  const handleAcceptTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await acceptTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        if (result._tag === "Success") {
+          navigateToThread(scopeThreadRef(suggestion.environmentId, result.value.threadId));
+          return;
+        }
+        reportTaskSuggestionFailure("Could not accept suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [acceptTaskSuggestion, navigateToThread, reportTaskSuggestionFailure, setTaskSuggestionBusy],
+  );
+  const handleDismissTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await dismissTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        reportTaskSuggestionFailure("Could not dismiss suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [dismissTaskSuggestion, reportTaskSuggestionFailure, setTaskSuggestionBusy],
+  );
+  const handleRestoreTaskSuggestion = useCallback(
+    async (suggestion: TaskSuggestion) => {
+      setTaskSuggestionBusy(suggestion.suggestionId, true);
+      try {
+        const result = await restoreTaskSuggestion({
+          environmentId: suggestion.environmentId,
+          input: { suggestionId: suggestion.suggestionId },
+        });
+        reportTaskSuggestionFailure("Could not restore suggested task", result);
+      } finally {
+        setTaskSuggestionBusy(suggestion.suggestionId, false);
+      }
+    },
+    [reportTaskSuggestionFailure, restoreTaskSuggestion, setTaskSuggestionBusy],
+  );
+  const handleOpenTaskSuggestion = useCallback(
+    (suggestion: TaskSuggestion) => {
+      if (suggestion.acceptedThreadId === undefined) return;
+      navigateToThread(scopeThreadRef(suggestion.environmentId, suggestion.acceptedThreadId));
+    },
+    [navigateToThread],
   );
 
   const navigateToDraft = useCallback(
@@ -3456,6 +3564,21 @@ export default function Sidebar() {
                     </MenuRadioGroup>
                   </MenuPopup>
                 </Menu>
+                <TaskSuggestionsPopover
+                  suggestions={visibleTaskSuggestions}
+                  busySuggestionIds={busySuggestionIds}
+                  providerEntryByInstanceId={providerEntryByInstanceId}
+                  onAccept={(suggestion) => {
+                    void handleAcceptTaskSuggestion(suggestion);
+                  }}
+                  onDismiss={(suggestion) => {
+                    void handleDismissTaskSuggestion(suggestion);
+                  }}
+                  onOpen={handleOpenTaskSuggestion}
+                  onRestore={(suggestion) => {
+                    void handleRestoreTaskSuggestion(suggestion);
+                  }}
+                />
                 <Tooltip>
                   <TooltipTrigger
                     render={

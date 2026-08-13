@@ -8,7 +8,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type TaskSuggestion,
+  type TurnId,
+} from "@t3tools/contracts";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -207,6 +212,12 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       turnPlan: TurnPlanEntry;
+    }
+  | {
+      kind: "task-suggestions";
+      id: string;
+      createdAt: string;
+      suggestions: ReadonlyArray<TaskSuggestion>;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -452,12 +463,22 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt: string | null;
   turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
   revertTurnCountByUserMessageId: ReadonlyMap<MessageId, number>;
+  taskSuggestions?: ReadonlyArray<TaskSuggestion>;
 }): MessagesTimelineRow[] {
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const taskSuggestionsByTurnId = new Map<TurnId, TaskSuggestion[]>();
+  for (const suggestion of input.taskSuggestions ?? []) {
+    const existing = taskSuggestionsByTurnId.get(suggestion.sourceTurnId);
+    if (existing) {
+      existing.push(suggestion);
+    } else {
+      taskSuggestionsByTurnId.set(suggestion.sourceTurnId, [suggestion]);
+    }
+  }
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -627,6 +648,24 @@ export function deriveMessagesTimelineRows(input: {
           ? input.revertTurnCountByUserMessageId.get(timelineEntry.message.id)
           : undefined,
     });
+
+    const turnSuggestions =
+      timelineEntry.message.role === "assistant" && timelineEntry.message.turnId
+        ? taskSuggestionsByTurnId.get(timelineEntry.message.turnId)
+        : undefined;
+    if (
+      turnSuggestions &&
+      turnSuggestions.length > 0 &&
+      terminalAssistantMessageIds.has(timelineEntry.message.id) &&
+      !assistantTurnStillInProgress
+    ) {
+      nextRows.push({
+        kind: "task-suggestions",
+        id: `task-suggestions:${timelineEntry.message.turnId}`,
+        createdAt: turnSuggestions.at(-1)?.createdAt ?? timelineEntry.createdAt,
+        suggestions: turnSuggestions,
+      });
+    }
   }
 
   if (input.isWorking) {
@@ -682,6 +721,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       // unchanged plan keeps its row reference (virtualization stability).
       return a.createdAt === bp.createdAt && a.turnPlan.plan === bp.turnPlan.plan;
     }
+
+    case "task-suggestions":
+      return Equal.equals(a.suggestions, (b as typeof a).suggestions);
 
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);

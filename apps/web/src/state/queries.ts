@@ -13,6 +13,7 @@ import type {
   EnvironmentId,
   OrchestrationThread,
   OrchestrationCrewThreadMetadata,
+  TaskSuggestion,
   ProjectContentMatch,
   ProjectEntryKind,
   ThreadId,
@@ -26,6 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { orchestrationEnvironment } from "./orchestration";
+import { taskSuggestionEnvironment } from "./taskSuggestions";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
 import { projectContentSearch, projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
@@ -135,6 +137,42 @@ export function useCrewThreadMetadata(
       }
     }
     return metadata;
+  }, [results]);
+}
+
+export interface EnvironmentTaskSuggestion extends TaskSuggestion {
+  readonly environmentId: EnvironmentId;
+}
+
+export function useTaskSuggestions(environmentIds: ReadonlyArray<EnvironmentId>): {
+  readonly suggestions: ReadonlyArray<EnvironmentTaskSuggestion>;
+  readonly isPending: boolean;
+} {
+  const suggestionAtoms = useMemo(
+    () =>
+      environmentIds.map((environmentId) => ({
+        environmentId,
+        atom: taskSuggestionEnvironment.list({ environmentId, input: {} }),
+      })),
+    [environmentIds],
+  );
+  const combinedAtom = useMemo(
+    () =>
+      Atom.make((get) =>
+        suggestionAtoms.map(({ environmentId, atom }) => ({ environmentId, result: get(atom) })),
+      ).pipe(Atom.withLabel("web:task-suggestions")),
+    [suggestionAtoms],
+  );
+  const results = useAtomValue(combinedAtom);
+  return useMemo(() => {
+    const suggestions: EnvironmentTaskSuggestion[] = [];
+    let isPending = false;
+    for (const { result } of results) {
+      const value = Option.getOrNull(AsyncResult.value(result));
+      if (value) suggestions.push(...value.suggestions);
+      isPending ||= result.waiting;
+    }
+    return { suggestions, isPending };
   }, [results]);
 }
 
