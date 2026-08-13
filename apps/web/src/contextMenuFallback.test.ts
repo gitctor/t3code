@@ -24,6 +24,7 @@ class FakeElement {
   parent: FakeElement | null = null;
   style: Record<string, string> & { cssText?: string } = {};
   dataset: Record<string, string> = {};
+  attributes: Record<string, string> = {};
   className = "";
   disabled = false;
   type = "";
@@ -53,6 +54,10 @@ class FakeElement {
     const existing = this.listeners.get(type) ?? [];
     existing.push(listener);
     this.listeners.set(type, existing);
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attributes[name] = value;
   }
 
   dispatchEvent(event: FakeDomEvent) {
@@ -234,5 +239,17 @@ describe("showContextMenuFallback", () => {
     childButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await expect(selectionPromise).resolves.toBe("rename:project-b");
+  });
+
+  it("renders requested separators between action groups", () => {
+    void showContextMenuFallback([
+      { id: "pin", label: "Pin" },
+      { id: "rename", label: "Rename", separatorBefore: true },
+    ]);
+
+    const separators = (document as unknown as FakeDocument)
+      .querySelectorAll("div")
+      .filter((element) => element.attributes.role === "separator");
+    expect(separators).toHaveLength(1);
   });
 });

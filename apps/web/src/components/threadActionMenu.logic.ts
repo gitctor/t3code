@@ -18,6 +18,7 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "copy"
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
@@ -88,7 +89,7 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
-    { id: "rename", label: "Rename thread" },
+    { id: "rename", label: "Rename thread", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [
           {
@@ -99,9 +100,24 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread" },
-    { id: "copy-path", label: "Copy path", icon: "copy" },
-    ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
-    { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
-    { id: "delete", label: "Delete", destructive: true, icon: "trash" },
+    {
+      id: "copy",
+      label: "Copy",
+      separatorBefore: true,
+      children: [
+        { id: "copy-path", label: "Copy path", icon: "copy" },
+        ...(state.branch
+          ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }]
+          : []),
+        { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+      ],
+    },
+    {
+      id: "delete",
+      label: "Delete",
+      destructive: true,
+      separatorBefore: true,
+      icon: "trash",
+    },
   ];
 }

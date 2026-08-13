@@ -180,6 +180,15 @@ export function showContextMenuFallback<T extends string>(
         "max-height:min(24rem,70vh);min-width:0;max-width:24rem;overflow-x:hidden;overflow-y:auto;padding:0.25rem;";
 
       for (const item of entries) {
+        if (item.separatorBefore && inner.children.length > 0) {
+          const separator = document.createElement("div");
+          separator.className = "-mx-1 my-1 h-px bg-border";
+          separator.style.cssText =
+            "height:1px;margin:0.25rem -0.25rem;background:var(--border);pointer-events:none;";
+          separator.setAttribute("role", "separator");
+          inner.appendChild(separator);
+        }
+
         if (item.header === true) {
           const header = document.createElement("div");
           header.className = "px-2 py-1.5 font-medium text-muted-foreground text-xs";

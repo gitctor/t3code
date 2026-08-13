@@ -19,6 +19,12 @@ function ids(state: ThreadActionMenuState): string[] {
   return buildThreadActionMenuItems(state).map((item) => item.id);
 }
 
+function leafIds(state: ThreadActionMenuState): string[] {
+  return buildThreadActionMenuItems(state).flatMap((item) =>
+    item.children ? item.children.map((child) => child.id) : [item.id],
+  );
+}
+
 describe("buildThreadActionMenuItems", () => {
   it("hides lifecycle items when the environment lacks the capabilities", () => {
     expect(
@@ -26,15 +32,15 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy-path", "copy-thread-id", "delete"]);
+    ).toEqual(["rename", "mark-unread", "copy", "delete"]);
   });
 
   it("includes branch items only for threads with a branch", () => {
-    const withBranch = ids({ ...baseState, branch: "feat/menu" });
+    const withBranch = leafIds({ ...baseState, branch: "feat/menu" });
     expect(withBranch).toContain("new-thread-on-branch");
     expect(withBranch).toContain("copy-branch");
-    expect(ids(baseState)).not.toContain("new-thread-on-branch");
-    expect(ids(baseState)).not.toContain("copy-branch");
+    expect(leafIds(baseState)).not.toContain("new-thread-on-branch");
+    expect(leafIds(baseState)).not.toContain("copy-branch");
   });
 
   it("flips lifecycle labels with thread state", () => {
@@ -62,5 +68,32 @@ describe("buildThreadActionMenuItems", () => {
   it("marks delete as destructive and keeps it last", () => {
     const items = buildThreadActionMenuItems({ ...baseState, branch: "main" });
     expect(items.at(-1)).toMatchObject({ id: "delete", destructive: true });
+  });
+
+  it("groups edit and copy actions without dropping any action", () => {
+    const items = buildThreadActionMenuItems({ ...baseState, branch: "main" });
+    const copy = items.find((item) => item.id === "copy");
+
+    expect(items.find((item) => item.id === "rename")?.separatorBefore).toBe(true);
+    expect(copy).toMatchObject({ label: "Copy", separatorBefore: true });
+    expect(copy?.children?.map((item) => item.id)).toEqual([
+      "copy-path",
+      "copy-branch",
+      "copy-thread-id",
+    ]);
+    expect(items.at(-1)).toMatchObject({ id: "delete", separatorBefore: true });
+    expect(leafIds({ ...baseState, branch: "main" })).toEqual([
+      "new-thread-on-branch",
+      "pin",
+      "settle",
+      "snooze:hour",
+      "rename",
+      "regenerate-title",
+      "mark-unread",
+      "copy-path",
+      "copy-branch",
+      "copy-thread-id",
+      "delete",
+    ]);
   });
 });
