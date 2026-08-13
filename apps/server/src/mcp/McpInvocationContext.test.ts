@@ -5,6 +5,7 @@ import {
   PreviewAutomationUnavailableError,
   ProviderInstanceId,
   TaskSuggestionError,
+  ThreadMessagingError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -83,6 +84,30 @@ it.effect("reports a typed orchestration error when no crew capability is grante
     expect(error).toMatchObject({
       code: "not-orchestrating",
       message: "No crew is active for this thread.",
+    });
+  });
+});
+
+it.effect("reports a typed messaging error when threads are isolated", () => {
+  const invocation: McpInvocationContext.McpInvocationScope = {
+    environmentId: EnvironmentId.make("environment-1"),
+    threadId: ThreadId.make("thread-1"),
+    providerSessionId: "provider-session-1",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    capabilities: new Set(["preview"]),
+    issuedAt: 1,
+  };
+
+  return Effect.gen(function* () {
+    const error = yield* McpInvocationContext.requireMcpCapability("messaging").pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+      Effect.flip,
+    );
+
+    expect(error).toBeInstanceOf(ThreadMessagingError);
+    expect(error).toMatchObject({
+      code: "capability-unavailable",
+      message: "MCP credential does not grant the messaging capability.",
     });
   });
 });

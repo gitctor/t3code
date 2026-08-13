@@ -213,6 +213,12 @@ const withHarness = <A, E>(
             dispatch.parentTurnId === requestedTurnId,
         ),
       ),
+    listByParentThread: ({ parentThreadId: requestedThreadId }) =>
+      Effect.succeed(
+        [...dispatches.values()].filter(
+          (dispatch) => dispatch.parentThreadId === requestedThreadId,
+        ),
+      ),
     listUnsettledByParentThread: ({ parentThreadId: requestedThreadId }) =>
       Effect.succeed(
         [...dispatches.values()].filter(

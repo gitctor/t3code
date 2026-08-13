@@ -119,6 +119,17 @@ const makeProjectionDispatchRepository = Effect.gen(function* () {
     `,
   });
 
+  const listRowsByParentThread = SqlSchema.findAll({
+    Request: ListProjectionDispatchesByParentThreadInput,
+    Result: ProjectionDispatch,
+    execute: ({ parentThreadId }) => sql`
+      SELECT ${selectColumns}
+      FROM projection_dispatches
+      WHERE parent_thread_id = ${parentThreadId}
+      ORDER BY started_at ASC, dispatch_id ASC
+    `,
+  });
+
   const listUnsettledRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionDispatch,
@@ -142,6 +153,10 @@ const makeProjectionDispatchRepository = Effect.gen(function* () {
       ),
     listByParentTurn: (input) =>
       listRowsByParentTurn(input).pipe(mapError("ProjectionDispatchRepository.listByParentTurn")),
+    listByParentThread: (input) =>
+      listRowsByParentThread(input).pipe(
+        mapError("ProjectionDispatchRepository.listByParentThread"),
+      ),
     listUnsettledByParentThread: (input) =>
       listUnsettledRowsByParentThread(input).pipe(
         mapError("ProjectionDispatchRepository.listUnsettledByParentThread"),

@@ -54,6 +54,9 @@ export interface ProjectionDispatchRepositoryShape {
   readonly listByParentTurn: (
     input: typeof ListProjectionDispatchesByParentTurnInput.Type,
   ) => Effect.Effect<ReadonlyArray<ProjectionDispatch>, ProjectionRepositoryError>;
+  readonly listByParentThread: (
+    input: typeof ListProjectionDispatchesByParentThreadInput.Type,
+  ) => Effect.Effect<ReadonlyArray<ProjectionDispatch>, ProjectionRepositoryError>;
   readonly listUnsettledByParentThread: (
     input: typeof ListProjectionDispatchesByParentThreadInput.Type,
   ) => Effect.Effect<ReadonlyArray<ProjectionDispatch>, ProjectionRepositoryError>;

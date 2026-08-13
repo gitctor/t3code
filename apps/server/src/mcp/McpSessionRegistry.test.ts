@@ -19,11 +19,16 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
   getDescriptor: Effect.die("unused"),
 });
 
-const makeRegistry = (now: () => number, httpServer = fakeHttpServer) =>
+const makeRegistry = (
+  now: () => number,
+  httpServer = fakeHttpServer,
+  crossThreadMessaging: "off" | "crew" | "project" = "off",
+) =>
   McpSessionRegistry.__testing
     .make({
       now,
       livenessWindowMs: 100,
+      getCrossThreadMessaging: Effect.succeed(crossThreadMessaging),
     })
     .pipe(
       Effect.provideService(HttpServer.HttpServer, httpServer),
@@ -155,5 +160,23 @@ it.effect("changes orchestration access without rotating the provider credential
       "preview",
       "suggestions",
     ]);
+  }),
+);
+
+it.effect("grants messaging only when the operator selects crew or project scope", () =>
+  Effect.gen(function* () {
+    for (const [level, expected] of [
+      ["off", false],
+      ["crew", true],
+      ["project", true],
+    ] as const) {
+      const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, level);
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(`thread-${level}`),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      });
+      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+      expect((yield* registry.resolve(token))?.capabilities.has("messaging")).toBe(expected);
+    }
   }),
 );

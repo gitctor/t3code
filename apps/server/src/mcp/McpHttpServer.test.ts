@@ -13,6 +13,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as DispatchBroker from "./DispatchBroker.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as ThreadMessagingBroker from "./ThreadMessagingBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -68,6 +69,8 @@ it("keeps a crewless session tool list byte-identical to the pre-orchestration l
         { name: "dispatch", inputSchema: { type: "object" } },
         { name: "await_dispatch", inputSchema: { type: "object" } },
         { name: "list_dispatches", inputSchema: { type: "object" } },
+        { name: "list_threads", inputSchema: { type: "object" } },
+        { name: "send_to_thread", inputSchema: { type: "object" } },
       ],
     },
   });
@@ -81,6 +84,13 @@ it("keeps a crewless session tool list byte-identical to the pre-orchestration l
 
   expect(
     McpHttpServer.filterMcpToolListResponse(registered, new Set(["preview", "orchestration"])),
+  ).not.toBe(registered);
+
+  expect(
+    McpHttpServer.filterMcpToolListResponse(
+      registered,
+      new Set(["preview", "orchestration", "messaging"]),
+    ),
   ).toBe(registered);
 });
 
@@ -99,6 +109,7 @@ it.effect("hides orchestration tools on the authenticated crewless HTTP session"
       const serverLayer = McpHttpServer.layer.pipe(
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
         Layer.provide(DispatchBroker.unavailableLayer),
+        Layer.provide(ThreadMessagingBroker.unavailableLayer),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
       );
       yield* HttpRouter.serve(serverLayer, {
@@ -136,6 +147,8 @@ it.effect("hides orchestration tools on the authenticated crewless HTTP session"
       expect(body).not.toContain('"name":"dispatch"');
       expect(body).not.toContain('"name":"await_dispatch"');
       expect(body).not.toContain('"name":"list_dispatches"');
+      expect(body).not.toContain('"name":"list_threads"');
+      expect(body).not.toContain('"name":"send_to_thread"');
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

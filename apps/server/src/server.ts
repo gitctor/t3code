@@ -47,6 +47,8 @@ import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as DispatchBroker from "./mcp/DispatchBroker.ts";
 import * as TaskSuggestionBroker from "./mcp/TaskSuggestionBroker.ts";
+import * as ThreadMessagingBroker from "./mcp/ThreadMessagingBroker.ts";
+import { CrossThreadMessageDeliveryLockLive } from "./mcp/CrossThreadMessageDeliveryLock.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -62,6 +64,7 @@ import { CrewRegistryLive } from "./orchestration/Layers/CrewRegistry.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { DispatchReactorLive } from "./orchestration/Layers/DispatchReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import { CrossThreadMessageReactorLive } from "./orchestration/Layers/CrossThreadMessageReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -253,6 +256,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(DispatchReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
+  Layer.provideMerge(
+    CrossThreadMessageReactorLive.pipe(Layer.provide(CrossThreadMessageDeliveryLockLive)),
+  ),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
@@ -426,6 +432,7 @@ const RuntimeCoreDependenciesBaseLive = ReactorLayerLive.pipe(
 const RuntimeCoreDependenciesLive = Layer.mergeAll(
   DispatchBroker.layer,
   TaskSuggestionBroker.layer,
+  ThreadMessagingBroker.layer.pipe(Layer.provide(CrossThreadMessageDeliveryLockLive)),
 ).pipe(Layer.provideMerge(RuntimeCoreDependenciesBaseLive));
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(

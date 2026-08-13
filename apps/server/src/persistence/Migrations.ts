@@ -56,6 +56,7 @@ import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_CrossProviderDispatches.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadParents.ts";
 import Migration0043 from "./Migrations/043_TaskSuggestions.ts";
+import Migration0044 from "./Migrations/044_CrossThreadMessages.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -111,6 +112,7 @@ export const migrationEntries = [
   [41, "CrossProviderDispatches", Migration0041],
   [42, "ProjectionThreadParents", Migration0042],
   [43, "TaskSuggestions", Migration0043],
+  [44, "CrossThreadMessages", Migration0044],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

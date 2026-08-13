@@ -10,6 +10,7 @@ import { DispatchReactor } from "../Services/DispatchReactor.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
+import { CrossThreadMessageReactor } from "../Services/CrossThreadMessageReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
@@ -75,6 +76,14 @@ describe("OrchestrationReactor", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.succeed(CrossThreadMessageReactor, {
+            start: () => {
+              started.push("cross-thread-message-reactor");
+              return Effect.void;
+            },
+          }),
+        ),
+        Layer.provideMerge(
           Layer.succeed(AgentAwarenessRelay.AgentAwarenessRelay, {
             publishThread: () => Effect.void,
             start: () => {
@@ -96,6 +105,7 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "dispatch-reactor",
       "thread-deletion-reactor",
+      "cross-thread-message-reactor",
       "agent-awareness-relay",
     ]);
 

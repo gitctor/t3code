@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { type CrossThreadMessagingLevel, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -8,6 +8,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 
@@ -58,6 +59,7 @@ interface RegistryState {
 export interface McpSessionRegistryOptions {
   readonly livenessWindowMs?: number;
   readonly now?: () => number;
+  readonly getCrossThreadMessaging?: Effect.Effect<CrossThreadMessagingLevel>;
 }
 
 /**
@@ -102,6 +104,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
+  const getCrossThreadMessaging = options.getCrossThreadMessaging ?? Effect.succeed("off" as const);
   const endpoint =
     httpServer.address._tag === "TcpAddress"
       ? `http://${getHttpMcpEndpointHost(httpServer.address.hostname)}:${httpServer.address.port}/mcp`
@@ -127,12 +130,17 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const crossThreadMessaging = yield* getCrossThreadMessaging;
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set(["preview", "suggestions"]),
+        capabilities: new Set([
+          "preview",
+          "suggestions",
+          ...(crossThreadMessaging === "off" ? [] : (["messaging"] as const)),
+        ]),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -200,6 +208,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
                   capabilities: new Set<McpInvocationContext.McpCapability>([
                     ...capabilities,
                     "suggestions",
+                    ...(record.scope.capabilities.has("messaging") ? (["messaging"] as const) : []),
                   ]),
                 },
               }
@@ -234,7 +243,15 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 let activeMcpSessionRegistry: McpSessionRegistryShape | undefined;
 
 const make = Effect.acquireRelease(
-  makeWithOptions().pipe(
+  Effect.gen(function* () {
+    const settings = yield* ServerSettings.ServerSettingsService;
+    return yield* makeWithOptions({
+      getCrossThreadMessaging: settings.getSettings.pipe(
+        Effect.map((current) => current.crossThreadMessaging),
+        Effect.orElseSucceed(() => "off" as const),
+      ),
+    });
+  }).pipe(
     Effect.tap((registry) =>
       Effect.sync(() => {
         activeMcpSessionRegistry = registry;

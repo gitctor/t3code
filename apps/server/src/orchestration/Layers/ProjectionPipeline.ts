@@ -31,6 +31,7 @@ import {
 import { ProjectionThreadSessionRepository } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionDispatchRepository } from "../../persistence/Services/ProjectionDispatches.ts";
 import { ProjectionTaskSuggestionRepository } from "../../persistence/Services/ProjectionTaskSuggestions.ts";
+import { ProjectionCrossThreadMessageRepository } from "../../persistence/Services/ProjectionCrossThreadMessages.ts";
 import {
   type ProjectionTurn,
   ProjectionTurnRepository,
@@ -45,6 +46,7 @@ import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/La
 import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/ProjectionThreadSessions.ts";
 import { ProjectionDispatchRepositoryLive } from "../../persistence/Layers/ProjectionDispatches.ts";
 import { ProjectionTaskSuggestionRepositoryLive } from "../../persistence/Layers/ProjectionTaskSuggestions.ts";
+import { ProjectionCrossThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionCrossThreadMessages.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ServerConfig } from "../../config.ts";
@@ -59,6 +61,7 @@ import {
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
 import { taskSuggestionProjectionRow } from "../TaskSuggestionProjection.ts";
+import { crossThreadMessageProjectionRow } from "../CrossThreadMessageProjection.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -70,6 +73,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   dispatches: "projection.dispatches",
   taskSuggestions: "projection.task-suggestions",
+  crossThreadMessages: "projection.cross-thread-messages",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
 } as const;
@@ -488,6 +492,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionDispatchRepository = yield* ProjectionDispatchRepository;
     const projectionTaskSuggestionRepository = yield* ProjectionTaskSuggestionRepository;
+    const projectionCrossThreadMessageRepository = yield* ProjectionCrossThreadMessageRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
@@ -992,6 +997,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
+            ...(event.payload.crossThreadSource !== undefined
+              ? { crossThreadSource: event.payload.crossThreadSource }
+              : {}),
           });
           return;
         }
@@ -1539,6 +1547,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    const applyCrossThreadMessagesProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyCrossThreadMessagesProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "message.sent":
+        case "message.delivered":
+        case "message.rejected":
+          yield* projectionCrossThreadMessageRepository.upsert(
+            crossThreadMessageProjectionRow(event),
+          );
+          return;
+        default:
+          return;
+      }
+    });
+
     const applyCheckpointsProjection: ProjectorDefinition["apply"] = () => Effect.void;
 
     const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = Effect.fn(
@@ -1699,6 +1723,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyTaskSuggestionsProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.crossThreadMessages,
+        apply: applyCrossThreadMessagesProjection,
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.checkpoints,
         apply: applyCheckpointsProjection,
       },
@@ -1813,6 +1841,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionDispatchRepositoryLive),
   Layer.provideMerge(ProjectionTaskSuggestionRepositoryLive),
+  Layer.provideMerge(ProjectionCrossThreadMessageRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

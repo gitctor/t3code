@@ -224,6 +224,42 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   Crypto.Crypto
 > {
   switch (command.type) {
+    case "message.send":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "message",
+          aggregateId: command.message.messageId,
+          occurredAt: command.message.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "message.sent",
+        payload: { message: command.message },
+      };
+
+    case "message.deliver":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "message",
+          aggregateId: command.message.messageId,
+          occurredAt: command.message.deliveredAt ?? command.message.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "message.delivered",
+        payload: { message: command.message },
+      };
+
+    case "message.reject":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "message",
+          aggregateId: command.message.messageId,
+          occurredAt: command.message.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "message.rejected",
+        payload: { message: command.message },
+      };
+
     case "suggestion.create":
       return {
         ...(yield* withEventBase({
@@ -1164,6 +1200,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           streaming: false,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
+          ...(command.crossThreadSource !== undefined
+            ? { crossThreadSource: command.crossThreadSource }
+            : {}),
         },
       };
     }

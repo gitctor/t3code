@@ -3,13 +3,14 @@ import {
   OrchestrationError,
   PreviewAutomationUnavailableError,
   TaskSuggestionError,
+  ThreadMessagingError,
   type ProviderInstanceId,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview" | "orchestration" | "suggestions";
+export type McpCapability = "preview" | "orchestration" | "suggestions" | "messaging";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -63,6 +64,17 @@ const requireSuggestionsCapability = Effect.fn("mcp.requireSuggestionsCapability
   return invocation;
 });
 
+const requireMessagingCapability = Effect.fn("mcp.requireMessagingCapability")(function* () {
+  const invocation = yield* McpInvocationContext;
+  if (!invocation.capabilities.has("messaging")) {
+    return yield* new ThreadMessagingError({
+      code: "capability-unavailable",
+      message: "MCP credential does not grant the messaging capability.",
+    });
+  }
+  return invocation;
+});
+
 export function requireMcpCapability(
   capability: "preview",
 ): Effect.Effect<McpInvocationScope, PreviewAutomationUnavailableError, McpInvocationContext>;
@@ -72,6 +84,9 @@ export function requireMcpCapability(
 export function requireMcpCapability(
   capability: "suggestions",
 ): Effect.Effect<McpInvocationScope, TaskSuggestionError, McpInvocationContext>;
+export function requireMcpCapability(
+  capability: "messaging",
+): Effect.Effect<McpInvocationScope, ThreadMessagingError, McpInvocationContext>;
 export function requireMcpCapability(capability: McpCapability) {
   switch (capability) {
     case "preview":
@@ -80,5 +95,7 @@ export function requireMcpCapability(capability: McpCapability) {
       return requireOrchestrationCapability();
     case "suggestions":
       return requireSuggestionsCapability();
+    case "messaging":
+      return requireMessagingCapability();
   }
 }

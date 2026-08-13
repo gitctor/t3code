@@ -205,6 +205,12 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    // Cross-thread messages have their own durable projection. Transcript
+    // audit lines arrive through the normal thread.message-sent event.
+    case "message.sent":
+    case "message.delivered":
+    case "message.rejected":
+      return Effect.succeed(nextBase);
     // Suggestions have their own durable SQLite projection. The command read
     // model only advances its event cursor for these lifecycle events.
     case "suggestion.created":
@@ -528,6 +534,9 @@ export function projectEvent(
             streaming: payload.streaming,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
+            ...(payload.crossThreadSource !== undefined
+              ? { crossThreadSource: payload.crossThreadSource }
+              : {}),
           },
           event.type,
           "message",
@@ -549,6 +558,9 @@ export function projectEvent(
                     turnId: message.turnId,
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
+                      : {}),
+                    ...(message.crossThreadSource !== undefined
+                      ? { crossThreadSource: message.crossThreadSource }
                       : {}),
                   }
                 : entry,

@@ -111,4 +111,35 @@ layer("ProjectionThreadMessageRepository", (it) => {
       assert.deepEqual(rows[0]?.attachments, []);
     }),
   );
+
+  it.effect("round-trips server-owned cross-thread attribution", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-cross-thread-target");
+      const messageId = MessageId.make("message-cross-thread-audit");
+      const crossThreadSource = {
+        messageId: MessageId.make("message-cross-thread-delivery"),
+        sourceThreadId: ThreadId.make("thread-cross-thread-source"),
+        sourceThreadTitle: "Source planner",
+      };
+
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "system",
+        text: "Message from Source planner",
+        crossThreadSource,
+        isStreaming: false,
+        createdAt: "2026-08-12T12:00:00.000Z",
+        updatedAt: "2026-08-12T12:00:00.000Z",
+      });
+
+      const row = yield* repository.getByMessageId({ messageId });
+      assert.equal(row._tag, "Some");
+      if (row._tag === "Some") {
+        assert.deepEqual(row.value.crossThreadSource, crossThreadSource);
+      }
+    }),
+  );
 });

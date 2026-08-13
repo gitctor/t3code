@@ -159,6 +159,7 @@ it.effect("cancels live children on parent interruption and warns on parent comp
             ),
           ),
         listByParentTurn: () => Effect.sync(() => [...dispatches.values()]),
+        listByParentThread: () => Effect.sync(() => [...dispatches.values()]),
         listUnsettledByParentThread: ({ parentThreadId: requestedParentThreadId }) =>
           Effect.sync(() =>
             [...dispatches.values()].filter(

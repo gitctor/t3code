@@ -18,6 +18,8 @@ import { OrchestrationToolkitHandlersLive } from "./toolkits/orchestration/handl
 import { OrchestrationToolkit } from "./toolkits/orchestration/tools.ts";
 import { SuggestionsToolkitHandlersLive } from "./toolkits/suggestions/handlers.ts";
 import { SuggestionsToolkit } from "./toolkits/suggestions/tools.ts";
+import { MessagingToolkitHandlersLive } from "./toolkits/messaging/handlers.ts";
+import { MessagingToolkit } from "./toolkits/messaging/tools.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -69,10 +71,14 @@ export const normalizeMcpHttpResponse = (
 };
 
 const ORCHESTRATION_TOOL_NAMES = new Set(["dispatch", "await_dispatch", "list_dispatches"]);
+const MESSAGING_TOOL_NAMES = new Set(["list_threads", "send_to_thread"]);
 
-const filterOrchestrationTools = (payload: unknown): unknown => {
+const filterCapabilityTools = (
+  payload: unknown,
+  capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
+): unknown => {
   if (Array.isArray(payload)) {
-    return payload.map(filterOrchestrationTools);
+    return payload.map((item) => filterCapabilityTools(item, capabilities));
   }
   if (!Predicate.isObject(payload) || !Predicate.isObject(payload.result)) {
     return payload;
@@ -85,7 +91,8 @@ const filterOrchestrationTools = (payload: unknown): unknown => {
     (tool) =>
       !Predicate.isObject(tool) ||
       typeof tool.name !== "string" ||
-      !ORCHESTRATION_TOOL_NAMES.has(tool.name),
+      ((!ORCHESTRATION_TOOL_NAMES.has(tool.name) || capabilities.has("orchestration")) &&
+        (!MESSAGING_TOOL_NAMES.has(tool.name) || capabilities.has("messaging"))),
   );
   return filtered.length === tools.length
     ? payload
@@ -102,7 +109,10 @@ export const filterMcpToolListResponse = (
   response: HttpServerResponse.HttpServerResponse,
   capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
 ): HttpServerResponse.HttpServerResponse => {
-  if (capabilities.has("orchestration") || response.body._tag !== "Uint8Array") {
+  if (
+    (capabilities.has("orchestration") && capabilities.has("messaging")) ||
+    response.body._tag !== "Uint8Array"
+  ) {
     return response;
   }
   const body = response.body;
@@ -111,7 +121,7 @@ export const filterMcpToolListResponse = (
   }
   try {
     const decoded = JSON.parse(new TextDecoder().decode(body.body)) as unknown;
-    const filtered = filterOrchestrationTools(decoded);
+    const filtered = filterCapabilityTools(decoded, capabilities);
     if (filtered === decoded) {
       return response;
     }
@@ -286,6 +296,10 @@ export const SuggestionsToolkitRegistrationLive = McpServer.toolkit(SuggestionsT
   Layer.provide(SuggestionsToolkitHandlersLive),
 );
 
+export const MessagingToolkitRegistrationLive = McpServer.toolkit(MessagingToolkit).pipe(
+  Layer.provide(MessagingToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -297,4 +311,5 @@ export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   OrchestrationToolkitRegistrationLive,
   SuggestionsToolkitRegistrationLive,
+  MessagingToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));
