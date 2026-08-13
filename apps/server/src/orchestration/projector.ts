@@ -205,6 +205,14 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    // Suggestions have their own durable SQLite projection. The command read
+    // model only advances its event cursor for these lifecycle events.
+    case "suggestion.created":
+    case "suggestion.accepted":
+    case "suggestion.dismissed":
+    case "suggestion.restored":
+      return Effect.succeed(nextBase);
+
     // Crews are projected into server settings. The command read model has no
     // duplicate crew state; it only advances its global event cursor.
     case "crew.created":

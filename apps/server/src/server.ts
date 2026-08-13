@@ -46,6 +46,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as DispatchBroker from "./mcp/DispatchBroker.ts";
+import * as TaskSuggestionBroker from "./mcp/TaskSuggestionBroker.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -422,9 +423,10 @@ const RuntimeCoreDependenciesBaseLive = ReactorLayerLive.pipe(
   ),
 );
 
-const RuntimeCoreDependenciesLive = DispatchBroker.layer.pipe(
-  Layer.provideMerge(RuntimeCoreDependenciesBaseLive),
-);
+const RuntimeCoreDependenciesLive = Layer.mergeAll(
+  DispatchBroker.layer,
+  TaskSuggestionBroker.layer,
+).pipe(Layer.provideMerge(RuntimeCoreDependenciesBaseLive));
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.

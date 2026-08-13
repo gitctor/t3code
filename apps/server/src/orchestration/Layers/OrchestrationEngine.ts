@@ -4,6 +4,7 @@ import type {
   OrchestrationReadModel,
   ProjectId,
   ThreadId,
+  TaskSuggestionId,
 } from "@t3tools/contracts";
 import { OrchestrationCommand } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -58,10 +59,18 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "crew" | "project" | "thread";
-  readonly aggregateId: CrewId | ProjectId | ThreadId;
+  readonly aggregateKind: "crew" | "project" | "thread" | "suggestion";
+  readonly aggregateId: CrewId | ProjectId | ThreadId | TaskSuggestionId;
 } {
   switch (command.type) {
+    case "suggestion.create":
+    case "suggestion.accept":
+    case "suggestion.dismiss":
+    case "suggestion.restore":
+      return {
+        aggregateKind: "suggestion",
+        aggregateId: command.suggestion.suggestionId,
+      };
     case "crew.create":
     case "crew.update":
       return {

@@ -2,6 +2,7 @@ import * as Layer from "effect/Layer";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import { ProjectionTaskSuggestionRepositoryLive } from "../persistence/Layers/ProjectionTaskSuggestions.ts";
 import { OrchestrationEngineLive } from "./Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./Layers/ProjectionSnapshotQuery.ts";
@@ -21,6 +22,9 @@ export const OrchestrationInfrastructureLayerLive = Layer.mergeAll(
   OrchestrationProjectionSnapshotQueryLive,
   OrchestrationEventInfrastructureLayerLive,
   OrchestrationProjectionPipelineLayerLive,
+  // Suggestions are queried outside the projection pipeline by MCP and RPC
+  // handlers. The repository is stateless and shares the same SqlClient.
+  ProjectionTaskSuggestionRepositoryLive,
   // Shared background-liveness and plan-progress registries: written by
   // runtime ingestion, read by the snapshot query. provideMerge feeds the
   // same instance to the snapshot query here and re-exports it for runtime

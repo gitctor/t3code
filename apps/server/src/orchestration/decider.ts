@@ -224,6 +224,54 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   Crypto.Crypto
 > {
   switch (command.type) {
+    case "suggestion.create":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "suggestion",
+          aggregateId: command.suggestion.suggestionId,
+          occurredAt: command.suggestion.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "suggestion.created",
+        payload: { suggestion: command.suggestion },
+      };
+
+    case "suggestion.accept":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "suggestion",
+          aggregateId: command.suggestion.suggestionId,
+          occurredAt: command.suggestion.resolvedAt ?? command.suggestion.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "suggestion.accepted",
+        payload: { suggestion: command.suggestion },
+      };
+
+    case "suggestion.dismiss":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "suggestion",
+          aggregateId: command.suggestion.suggestionId,
+          occurredAt: command.suggestion.resolvedAt ?? command.suggestion.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "suggestion.dismissed",
+        payload: { suggestion: command.suggestion },
+      };
+
+    case "suggestion.restore":
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "suggestion",
+          aggregateId: command.suggestion.suggestionId,
+          occurredAt: command.restoredAt,
+          commandId: command.commandId,
+        })),
+        type: "suggestion.restored",
+        payload: { suggestion: command.suggestion },
+      };
+
     case "crew.create":
       return {
         ...(yield* withEventBase({

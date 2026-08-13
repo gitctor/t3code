@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
@@ -50,6 +51,14 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  isProviderAvailable,
+  MessageId,
+  type ModelSelection,
+  type ServerProvider,
+  SUGGESTIONS_WS_METHODS,
+  TaskSuggestionError,
+  type TaskSuggestion,
+  type TaskSuggestionStatus,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -59,6 +68,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -74,6 +84,9 @@ import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { isCrewPersistenceCommand, persistCrewCommand } from "./orchestration/CrewPersistence.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { taskSuggestionFromProjection } from "./orchestration/TaskSuggestionProjection.ts";
+import { resolveTaskSuggestionModelSelection } from "./orchestration/TaskSuggestionAcceptance.ts";
+import { ProjectionTaskSuggestionRepository } from "./persistence/Services/ProjectionTaskSuggestions.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -126,6 +139,7 @@ import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isTaskSuggestionError = Schema.is(TaskSuggestionError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const EDITOR_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -381,6 +395,9 @@ const makeWsRpcLayer = (
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+      const environmentId = yield* serverEnvironment.getEnvironmentId;
+      const taskSuggestionRepository = yield* ProjectionTaskSuggestionRepository;
+      const suggestionMutationSemaphore = yield* Semaphore.make(1);
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
       yield* Effect.addFinalizer(() =>
@@ -1035,7 +1052,260 @@ const makeWsRpcLayer = (
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
+      const suggestionError = (
+        code: TaskSuggestionError["code"],
+        message: string,
+      ): TaskSuggestionError => new TaskSuggestionError({ code, message });
+
+      const loadTaskSuggestion = Effect.fn("TaskSuggestions.load")(function* (
+        suggestionId: TaskSuggestion["suggestionId"],
+      ) {
+        const row = yield* taskSuggestionRepository
+          .getById({ suggestionId })
+          .pipe(
+            Effect.mapError(() =>
+              suggestionError("acceptance-failed", "Task suggestion state is unavailable."),
+            ),
+          );
+        if (Option.isNone(row) || row.value.environmentId !== environmentId) {
+          return yield* suggestionError("suggestion-not-found", "Task suggestion was not found.");
+        }
+        return taskSuggestionFromProjection(row.value);
+      });
+
+      const dispatchSuggestionLifecycle = Effect.fn("TaskSuggestions.dispatchLifecycle")(function* (
+        command:
+          | Extract<OrchestrationCommand, { readonly type: "suggestion.accept" }>
+          | Extract<OrchestrationCommand, { readonly type: "suggestion.dismiss" }>
+          | Extract<OrchestrationCommand, { readonly type: "suggestion.restore" }>,
+      ) {
+        yield* startup
+          .enqueueCommand(orchestrationEngine.dispatch(command))
+          .pipe(
+            Effect.mapError(() =>
+              suggestionError("acceptance-failed", "The task suggestion could not be updated."),
+            ),
+          );
+      });
+
+      const acceptTaskSuggestionUnlocked = Effect.fn("TaskSuggestions.acceptUnlocked")(function* (
+        suggestionId: TaskSuggestion["suggestionId"],
+      ) {
+        const suggestion = yield* loadTaskSuggestion(suggestionId);
+        if (suggestion.status === "accepted" && suggestion.acceptedThreadId !== undefined) {
+          return { suggestion, threadId: suggestion.acceptedThreadId };
+        }
+        if (suggestion.status !== "pending") {
+          return yield* suggestionError(
+            "invalid-status",
+            "Only pending task suggestions can be accepted.",
+          );
+        }
+
+        const sourceThreadOption = yield* projectionSnapshotQuery
+          .getThreadShellById(suggestion.sourceThreadId)
+          .pipe(
+            Effect.mapError(() =>
+              suggestionError("acceptance-failed", "The source thread is unavailable."),
+            ),
+          );
+        if (Option.isNone(sourceThreadOption)) {
+          return yield* suggestionError("acceptance-failed", "The source thread is unavailable.");
+        }
+        const sourceThread = sourceThreadOption.value;
+        const projectOption = yield* projectionSnapshotQuery
+          .getProjectShellById(sourceThread.projectId)
+          .pipe(
+            Effect.mapError(() =>
+              suggestionError("acceptance-failed", "The source project is unavailable."),
+            ),
+          );
+        if (Option.isNone(projectOption)) {
+          return yield* suggestionError("acceptance-failed", "The source project is unavailable.");
+        }
+        if (sourceThread.branch === null) {
+          return yield* suggestionError(
+            "acceptance-failed",
+            "The source thread has no branch for a new worktree.",
+          );
+        }
+
+        const providers = yield* providerRegistry.getProviders;
+        const modelSelection = resolveTaskSuggestionModelSelection({
+          suggestion,
+          sourceThread,
+          project: projectOption.value,
+          providers,
+        });
+        if (modelSelection === null) {
+          return yield* suggestionError(
+            "acceptance-failed",
+            "No available provider instance can run this task suggestion.",
+          );
+        }
+
+        const [threadUuid, messageUuid, branchUuid] = yield* Effect.all([
+          crypto.randomUUIDv4,
+          crypto.randomUUIDv4,
+          crypto.randomUUIDv4,
+        ]).pipe(Effect.orDie);
+        const threadId = ThreadId.make(threadUuid);
+        const createdAt = yield* nowIso;
+        yield* dispatchNormalizedCommand({
+          type: "thread.turn.start",
+          commandId: yield* serverCommandId("suggestion-accept-turn"),
+          threadId,
+          message: {
+            messageId: MessageId.make(messageUuid),
+            role: "user",
+            text: suggestion.prompt,
+            attachments: [],
+          },
+          modelSelection,
+          titleSeed: suggestion.title,
+          runtimeMode: sourceThread.runtimeMode,
+          interactionMode: sourceThread.interactionMode,
+          bootstrap: {
+            createThread: {
+              projectId: sourceThread.projectId,
+              title: suggestion.title,
+              modelSelection,
+              runtimeMode: sourceThread.runtimeMode,
+              interactionMode: sourceThread.interactionMode,
+              branch: sourceThread.branch,
+              worktreePath: null,
+              createdAt,
+            },
+            prepareWorktree: {
+              projectCwd: projectOption.value.workspaceRoot,
+              baseBranch: sourceThread.branch,
+              branch: buildTemporaryWorktreeBranchName(() => branchUuid),
+              startFromOrigin: false,
+            },
+            runSetupScript: true,
+          },
+          createdAt,
+        }).pipe(Effect.mapError((error) => suggestionError("acceptance-failed", error.message)));
+
+        const resolvedAt = yield* nowIso;
+        const acceptedSuggestion = {
+          ...suggestion,
+          status: "accepted" as const,
+          resolvedAt,
+          acceptedThreadId: threadId,
+        } satisfies TaskSuggestion;
+        yield* dispatchSuggestionLifecycle({
+          type: "suggestion.accept",
+          commandId: yield* serverCommandId("suggestion-accept"),
+          suggestion: acceptedSuggestion,
+        });
+        return { suggestion: acceptedSuggestion, threadId };
+      });
+
+      const dismissTaskSuggestionUnlocked = Effect.fn("TaskSuggestions.dismissUnlocked")(function* (
+        suggestionId: TaskSuggestion["suggestionId"],
+      ) {
+        const suggestion = yield* loadTaskSuggestion(suggestionId);
+        if (suggestion.status === "dismissed") return { suggestion };
+        if (suggestion.status !== "pending") {
+          return yield* suggestionError(
+            "invalid-status",
+            "Only pending task suggestions can be dismissed.",
+          );
+        }
+        const dismissedSuggestion = {
+          ...suggestion,
+          status: "dismissed" as const,
+          resolvedAt: yield* nowIso,
+        } satisfies TaskSuggestion;
+        yield* dispatchSuggestionLifecycle({
+          type: "suggestion.dismiss",
+          commandId: yield* serverCommandId("suggestion-dismiss"),
+          suggestion: dismissedSuggestion,
+        });
+        return { suggestion: dismissedSuggestion };
+      });
+
+      const restoreTaskSuggestionUnlocked = Effect.fn("TaskSuggestions.restoreUnlocked")(function* (
+        suggestionId: TaskSuggestion["suggestionId"],
+      ) {
+        const suggestion = yield* loadTaskSuggestion(suggestionId);
+        if (suggestion.status === "pending") return { suggestion };
+        if (suggestion.status !== "dismissed") {
+          return yield* suggestionError(
+            "invalid-status",
+            "Only dismissed task suggestions can be restored.",
+          );
+        }
+        const {
+          resolvedAt: _resolvedAt,
+          acceptedThreadId: _acceptedThreadId,
+          ...unresolvedSuggestion
+        } = suggestion;
+        const restoredSuggestion = {
+          ...unresolvedSuggestion,
+          status: "pending" as const,
+        } satisfies TaskSuggestion;
+        yield* dispatchSuggestionLifecycle({
+          type: "suggestion.restore",
+          commandId: yield* serverCommandId("suggestion-restore"),
+          suggestion: restoredSuggestion,
+          restoredAt: yield* nowIso,
+        });
+        return { suggestion: restoredSuggestion };
+      });
+
+      const normalizeSuggestionMutationError = Effect.mapError(
+        (error: TaskSuggestionError | OrchestrationDispatchCommandError) =>
+          isTaskSuggestionError(error)
+            ? error
+            : suggestionError("acceptance-failed", error.message),
+      );
+
       return WsRpcGroup.of({
+        [SUGGESTIONS_WS_METHODS.list]: (input) =>
+          observeRpcEffect(
+            SUGGESTIONS_WS_METHODS.list,
+            taskSuggestionRepository
+              .list({
+                environmentId,
+                status: input.status ?? null,
+                sourceThreadId: input.sourceThreadId ?? null,
+              })
+              .pipe(
+                Effect.map((rows) => ({
+                  suggestions: rows.map(taskSuggestionFromProjection),
+                })),
+                Effect.mapError(() =>
+                  suggestionError("acceptance-failed", "Task suggestions are unavailable."),
+                ),
+              ),
+            { "rpc.aggregate": "suggestions" },
+          ),
+        [SUGGESTIONS_WS_METHODS.accept]: ({ suggestionId }) =>
+          observeRpcEffect(
+            SUGGESTIONS_WS_METHODS.accept,
+            suggestionMutationSemaphore
+              .withPermits(1)(acceptTaskSuggestionUnlocked(suggestionId))
+              .pipe(normalizeSuggestionMutationError),
+            { "rpc.aggregate": "suggestions" },
+          ),
+        [SUGGESTIONS_WS_METHODS.dismiss]: ({ suggestionId }) =>
+          observeRpcEffect(
+            SUGGESTIONS_WS_METHODS.dismiss,
+            suggestionMutationSemaphore
+              .withPermits(1)(dismissTaskSuggestionUnlocked(suggestionId))
+              .pipe(normalizeSuggestionMutationError),
+            { "rpc.aggregate": "suggestions" },
+          ),
+        [SUGGESTIONS_WS_METHODS.restore]: ({ suggestionId }) =>
+          observeRpcEffect(
+            SUGGESTIONS_WS_METHODS.restore,
+            suggestionMutationSemaphore
+              .withPermits(1)(restoreTaskSuggestionUnlocked(suggestionId))
+              .pipe(normalizeSuggestionMutationError),
+            { "rpc.aggregate": "suggestions" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

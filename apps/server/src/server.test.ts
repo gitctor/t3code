@@ -29,7 +29,12 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ResolvedKeybindingRule,
+  SUGGESTIONS_WS_METHODS,
+  type ServerProvider,
+  type TaskSuggestion,
+  TaskSuggestionId,
   ThreadId,
+  TurnId,
   WS_METHODS,
   WsRpcGroup,
   EditorId,
@@ -114,6 +119,7 @@ import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
+import * as ProjectionTaskSuggestions from "./persistence/Services/ProjectionTaskSuggestions.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -405,6 +411,9 @@ const buildAppUnderTest = (options?: {
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
+    taskSuggestionRepository?: Partial<
+      ProjectionTaskSuggestions.ProjectionTaskSuggestionRepository["Service"]
+    >;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
     browserTraceCollector?: Partial<BrowserTraceCollector.BrowserTraceCollector["Service"]>;
     serverLifecycleEvents?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
@@ -611,7 +620,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
     );
 
-    const servedRoutesLayer = HttpRouter.serve(
+    const servedRoutesLayerBase = HttpRouter.serve(
       makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
       {
         disableListenLog: true,
@@ -810,6 +819,17 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.projectionSnapshotQuery,
         }),
       ),
+      Layer.provide(
+        Layer.mock(ProjectionTaskSuggestions.ProjectionTaskSuggestionRepository)({
+          upsert: () => Effect.void,
+          getById: () => Effect.succeed(Option.none()),
+          list: () => Effect.succeed([]),
+          countPendingBySourceThread: () => Effect.succeed(0),
+          ...options?.layers?.taskSuggestionRepository,
+        }),
+      ),
+    );
+    const servedRoutesLayer = servedRoutesLayerBase.pipe(
       Layer.provide(
         Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({
           getTurnDiff: () =>
@@ -7347,6 +7367,231 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive", "thread.session.stop"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "accepts a task suggestion through worktree bootstrap before resolving its receipt",
+    () =>
+      Effect.gen(function* () {
+        const now = "2026-08-12T12:00:00.000Z";
+        const sourceThreadId = ThreadId.make("suggestion-source-thread");
+        const suggestionId = TaskSuggestionId.make("suggestion-accept");
+        const suggestion: TaskSuggestion = {
+          suggestionId,
+          environmentId: testEnvironmentDescriptor.environmentId,
+          sourceThreadId,
+          sourceTurnId: TurnId.make("suggestion-source-turn"),
+          title: "Review the mobile task cards",
+          prompt: "Review the mobile suggested-task cards and focused tests.",
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+          effort: "high",
+          concurrency: "parallel-safe",
+          status: "pending",
+          createdAt: now,
+        };
+        const dispatchedCommands: OrchestrationCommand[] = [];
+        const provider: ServerProvider = {
+          instanceId: ProviderInstanceId.make("codex"),
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          installed: true,
+          version: "1.0.0",
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: now,
+          models: [
+            {
+              slug: "gpt-5.6-sol",
+              name: "GPT-5.6 Sol",
+              isCustom: false,
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        };
+        const createWorktree = vi.fn(
+          (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
+            Effect.succeed({
+              worktree: {
+                refName: "t3code/suggestion-worktree",
+                path: "/tmp/suggestion-worktree",
+              },
+            }),
+        );
+
+        yield* buildAppUnderTest({
+          layers: {
+            providerRegistry: { getProviders: Effect.succeed([provider]) },
+            gitVcsDriver: { createWorktree },
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  dispatchedCommands.push(command);
+                  return { sequence: dispatchedCommands.length };
+                }),
+            },
+            projectionSnapshotQuery: {
+              getThreadShellById: (threadId) =>
+                Effect.succeed(
+                  threadId === sourceThreadId
+                    ? Option.some({
+                        id: sourceThreadId,
+                        projectId: defaultProjectId,
+                        title: "Suggestion source",
+                        modelSelection: defaultModelSelection,
+                        runtimeMode: "full-access" as const,
+                        interactionMode: "default" as const,
+                        branch: "build/crew-suite",
+                        worktreePath: "/tmp/source-worktree",
+                        parentThreadId: null,
+                        latestTurn: null,
+                        session: null,
+                        createdAt: now,
+                        updatedAt: now,
+                        archivedAt: null,
+                        settledOverride: null,
+                        settledAt: null,
+                        latestUserMessageAt: null,
+                        hasPendingApprovals: false,
+                        hasPendingUserInput: false,
+                        hasActionableProposedPlan: false,
+                      })
+                    : Option.none(),
+                ),
+              getProjectShellById: (projectId) =>
+                Effect.succeed(
+                  projectId === defaultProjectId
+                    ? Option.some({
+                        id: defaultProjectId,
+                        title: "Default Project",
+                        workspaceRoot: "/tmp/default-project",
+                        defaultModelSelection,
+                        scripts: [],
+                        createdAt: now,
+                        updatedAt: now,
+                      })
+                    : Option.none(),
+                ),
+            },
+            taskSuggestionRepository: {
+              getById: ({ suggestionId: requestedId }) =>
+                Effect.succeed(
+                  requestedId === suggestionId
+                    ? Option.some({
+                        suggestionId,
+                        environmentId: suggestion.environmentId,
+                        sourceThreadId,
+                        sourceTurnId: suggestion.sourceTurnId,
+                        title: suggestion.title,
+                        prompt: suggestion.prompt,
+                        instanceId: suggestion.instanceId ?? null,
+                        model: suggestion.model ?? null,
+                        effort: suggestion.effort ?? null,
+                        concurrency: suggestion.concurrency,
+                        soloReason: null,
+                        status: suggestion.status,
+                        createdAt: suggestion.createdAt,
+                        resolvedAt: null,
+                        acceptedThreadId: null,
+                      })
+                    : Option.none(),
+                ),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[SUGGESTIONS_WS_METHODS.accept]({ suggestionId }),
+          ),
+        );
+
+        assert.equal(result.suggestion.status, "accepted");
+        assert.equal(result.suggestion.acceptedThreadId, result.threadId);
+        assert.deepEqual(
+          dispatchedCommands.map((command) => command.type),
+          ["thread.create", "thread.meta.update", "thread.turn.start", "suggestion.accept"],
+        );
+        assert.equal(dispatchedCommands.at(-1)?.type, "suggestion.accept");
+        const turnStart = dispatchedCommands.find(
+          (command): command is Extract<OrchestrationCommand, { type: "thread.turn.start" }> =>
+            command.type === "thread.turn.start",
+        );
+        assert.equal(turnStart?.message.text, suggestion.prompt);
+        assert.deepEqual(turnStart?.modelSelection, {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+        });
+        assert.equal(createWorktree.mock.calls.length, 1);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("dismisses and restores a task suggestion through operator RPCs", () =>
+    Effect.gen(function* () {
+      const suggestionId = TaskSuggestionId.make("suggestion-dismiss");
+      const base = {
+        suggestionId,
+        environmentId: testEnvironmentDescriptor.environmentId,
+        sourceThreadId: ThreadId.make("source-thread"),
+        sourceTurnId: TurnId.make("source-turn"),
+        title: "Review the docs",
+        prompt: "Review the suggested tasks documentation.",
+        instanceId: null,
+        model: null,
+        effort: null,
+        concurrency: "run-solo" as const,
+        soloReason: "Touches shared documentation",
+        status: "pending" as const,
+        createdAt: "2026-08-12T12:00:00.000Z",
+        resolvedAt: null,
+        acceptedThreadId: null,
+      };
+      let current = base as ProjectionTaskSuggestions.ProjectionTaskSuggestion;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                if (
+                  command.type === "suggestion.dismiss" ||
+                  command.type === "suggestion.restore"
+                ) {
+                  current = {
+                    ...current,
+                    status: command.suggestion.status,
+                    resolvedAt: command.suggestion.resolvedAt ?? null,
+                    acceptedThreadId: command.suggestion.acceptedThreadId ?? null,
+                  };
+                }
+                return { sequence: 1 };
+              }),
+          },
+          taskSuggestionRepository: {
+            getById: () => Effect.succeed(Option.some(current)),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const dismissed = yield* client[SUGGESTIONS_WS_METHODS.dismiss]({ suggestionId });
+            assert.equal(dismissed.suggestion.status, "dismissed");
+            assert.isDefined(dismissed.suggestion.resolvedAt);
+
+            const restored = yield* client[SUGGESTIONS_WS_METHODS.restore]({ suggestionId });
+            assert.equal(restored.suggestion.status, "pending");
+            assert.isUndefined(restored.suggestion.resolvedAt);
+          }),
+        ),
       );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

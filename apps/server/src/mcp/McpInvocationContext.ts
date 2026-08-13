@@ -2,13 +2,14 @@ import {
   type EnvironmentId,
   OrchestrationError,
   PreviewAutomationUnavailableError,
+  TaskSuggestionError,
   type ProviderInstanceId,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview" | "orchestration";
+export type McpCapability = "preview" | "orchestration" | "suggestions";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -51,12 +52,33 @@ const requireOrchestrationCapability = Effect.fn("mcp.requireOrchestrationCapabi
   },
 );
 
+const requireSuggestionsCapability = Effect.fn("mcp.requireSuggestionsCapability")(function* () {
+  const invocation = yield* McpInvocationContext;
+  if (!invocation.capabilities.has("suggestions")) {
+    return yield* new TaskSuggestionError({
+      code: "capability-unavailable",
+      message: "MCP credential does not grant the suggestions capability.",
+    });
+  }
+  return invocation;
+});
+
 export function requireMcpCapability(
   capability: "preview",
 ): Effect.Effect<McpInvocationScope, PreviewAutomationUnavailableError, McpInvocationContext>;
 export function requireMcpCapability(
   capability: "orchestration",
 ): Effect.Effect<McpInvocationScope, OrchestrationError, McpInvocationContext>;
+export function requireMcpCapability(
+  capability: "suggestions",
+): Effect.Effect<McpInvocationScope, TaskSuggestionError, McpInvocationContext>;
 export function requireMcpCapability(capability: McpCapability) {
-  return capability === "preview" ? requirePreviewCapability() : requireOrchestrationCapability();
+  switch (capability) {
+    case "preview":
+      return requirePreviewCapability();
+    case "orchestration":
+      return requireOrchestrationCapability();
+    case "suggestions":
+      return requireSuggestionsCapability();
+  }
 }

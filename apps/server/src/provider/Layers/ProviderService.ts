@@ -620,7 +620,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* prepareMcpSession(threadId, resolvedInstanceId);
         yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
           threadId,
-          input.crewId === undefined ? new Set(["preview"]) : new Set(["preview", "orchestration"]),
+          input.crewId === undefined
+            ? new Set(["preview", "suggestions"])
+            : new Set(["preview", "suggestions", "orchestration"]),
         );
         const session = yield* adapter
           .startSession({
@@ -759,7 +761,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
         input.threadId,
-        input.crewId === undefined ? new Set(["preview"]) : new Set(["preview", "orchestration"]),
+        input.crewId === undefined
+          ? new Set(["preview", "suggestions"])
+          : new Set(["preview", "suggestions", "orchestration"]),
       );
       const turn = yield* routed.adapter.sendTurn(input);
       yield* directory.upsert({

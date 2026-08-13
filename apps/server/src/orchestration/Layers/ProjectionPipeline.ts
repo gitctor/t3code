@@ -30,6 +30,7 @@ import {
 } from "../../persistence/Services/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadSessionRepository } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionDispatchRepository } from "../../persistence/Services/ProjectionDispatches.ts";
+import { ProjectionTaskSuggestionRepository } from "../../persistence/Services/ProjectionTaskSuggestions.ts";
 import {
   type ProjectionTurn,
   ProjectionTurnRepository,
@@ -43,6 +44,7 @@ import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/
 import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/Layers/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadSessionRepositoryLive } from "../../persistence/Layers/ProjectionThreadSessions.ts";
 import { ProjectionDispatchRepositoryLive } from "../../persistence/Layers/ProjectionDispatches.ts";
+import { ProjectionTaskSuggestionRepositoryLive } from "../../persistence/Layers/ProjectionTaskSuggestions.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { ProjectionThreadRepositoryLive } from "../../persistence/Layers/ProjectionThreads.ts";
 import { ServerConfig } from "../../config.ts";
@@ -56,6 +58,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { taskSuggestionProjectionRow } from "../TaskSuggestionProjection.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -66,6 +69,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadSessions: "projection.thread-sessions",
   threadTurns: "projection.thread-turns",
   dispatches: "projection.dispatches",
+  taskSuggestions: "projection.task-suggestions",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
 } as const;
@@ -483,6 +487,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionDispatchRepository = yield* ProjectionDispatchRepository;
+    const projectionTaskSuggestionRepository = yield* ProjectionTaskSuggestionRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
@@ -1519,6 +1524,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       });
     });
 
+    const applyTaskSuggestionsProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyTaskSuggestionsProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "suggestion.created":
+        case "suggestion.accepted":
+        case "suggestion.dismissed":
+        case "suggestion.restored":
+          yield* projectionTaskSuggestionRepository.upsert(taskSuggestionProjectionRow(event));
+          return;
+        default:
+          return;
+      }
+    });
+
     const applyCheckpointsProjection: ProjectorDefinition["apply"] = () => Effect.void;
 
     const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = Effect.fn(
@@ -1675,6 +1695,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyDispatchesProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.taskSuggestions,
+        apply: applyTaskSuggestionsProjection,
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.checkpoints,
         apply: applyCheckpointsProjection,
       },
@@ -1788,6 +1812,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionDispatchRepositoryLive),
+  Layer.provideMerge(ProjectionTaskSuggestionRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

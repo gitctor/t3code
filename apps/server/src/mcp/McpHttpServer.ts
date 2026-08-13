@@ -16,6 +16,8 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestrationToolkitHandlersLive } from "./toolkits/orchestration/handlers.ts";
 import { OrchestrationToolkit } from "./toolkits/orchestration/tools.ts";
+import { SuggestionsToolkitHandlersLive } from "./toolkits/suggestions/handlers.ts";
+import { SuggestionsToolkit } from "./toolkits/suggestions/tools.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -280,6 +282,10 @@ export const OrchestrationToolkitRegistrationLive = McpServer.toolkit(Orchestrat
   Layer.provide(OrchestrationToolkitHandlersLive),
 );
 
+export const SuggestionsToolkitRegistrationLive = McpServer.toolkit(SuggestionsToolkit).pipe(
+  Layer.provide(SuggestionsToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -287,7 +293,8 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = Layer.merge(
+export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   OrchestrationToolkitRegistrationLive,
+  SuggestionsToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));
