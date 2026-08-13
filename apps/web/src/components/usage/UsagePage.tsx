@@ -22,6 +22,7 @@ import {
 } from "@t3tools/shared/usageFormat";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { AccountLimitsSection } from "./AccountLimits";
@@ -147,24 +148,22 @@ export function UsagePage() {
                   : `${formatDayShort(window.sinceDay)} to ${formatDayShort(window.untilDay)}`}
               </p>
               <div className="flex items-center gap-2">
-                <div className="flex rounded-md border border-border">
+                <ToggleGroup
+                  aria-label="Usage time range"
+                  size="sm"
+                  variant="ghost"
+                  value={[String(windowDays)]}
+                  onValueChange={(value) => {
+                    const days = Number(value[0]);
+                    if (WINDOW_OPTIONS.some((option) => option.days === days)) selectWindow(days);
+                  }}
+                >
                   {WINDOW_OPTIONS.map((option) => (
-                    <button
-                      key={option.days}
-                      type="button"
-                      aria-pressed={option.days === windowDays}
-                      onClick={() => selectWindow(option.days)}
-                      className={cn(
-                        "relative cursor-pointer px-3 py-1.5 text-xs outline-none first:rounded-s-[calc(var(--radius-md)-1px)] last:rounded-e-[calc(var(--radius-md)-1px)] focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                        option.days === windowDays
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
+                    <Toggle key={option.days} value={String(option.days)} className="px-3 text-xs">
                       {option.label}
-                    </button>
+                    </Toggle>
                   ))}
-                </div>
+                </ToggleGroup>
                 <button
                   type="button"
                   onClick={refreshWindow}

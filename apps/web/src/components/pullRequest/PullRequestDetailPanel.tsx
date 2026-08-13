@@ -76,6 +76,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { toastManager } from "../ui/toast";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
@@ -1028,25 +1029,28 @@ export function PullRequestDetailPanel({
           >
             {detail ? (
               <div className="flex min-w-0 items-center gap-1 px-4 pb-2">
-                <nav aria-label="Pull request tabs" className="flex shrink-0 items-center gap-0.5">
+                <ToggleGroup
+                  aria-label="Pull request tabs"
+                  className="shrink-0"
+                  size="sm"
+                  variant="ghost"
+                  value={[tab]}
+                  onValueChange={(value) => {
+                    const next = value[0];
+                    if (next === "summary" || next === "timeline" || next === "code") setTab(next);
+                  }}
+                >
                   {visibleTabs.map((item) => (
-                    <button
+                    <Toggle
                       key={item.value}
-                      type="button"
+                      value={item.value}
                       tabIndex={condensed ? 0 : -1}
-                      aria-pressed={tab === item.value}
-                      onClick={() => setTab(item.value)}
-                      className={cn(
-                        "rounded-md px-2 py-1 text-[11px] transition-colors",
-                        tab === item.value
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
+                      className="px-2 text-[11px]"
                     >
                       {item.label}
-                    </button>
+                    </Toggle>
                   ))}
-                </nav>
+                </ToggleGroup>
                 <span
                   className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-[11px] text-muted-foreground"
                   title={`${detail.baseBranch} ← ${detail.headBranch}`}
@@ -1181,22 +1185,21 @@ export function PullRequestDetailPanel({
                 className="col-span-2 flex min-w-0 items-center gap-1 overflow-x-auto border-t border-border/60 px-4 py-2"
                 aria-label="Pull request tabs"
               >
-                {visibleTabs.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    aria-pressed={tab === item.value}
-                    onClick={() => setTab(item.value)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors",
-                      tab === item.value
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+                <ToggleGroup
+                  size="sm"
+                  variant="ghost"
+                  value={[tab]}
+                  onValueChange={(value) => {
+                    const next = value[0];
+                    if (next === "summary" || next === "timeline" || next === "code") setTab(next);
+                  }}
+                >
+                  {visibleTabs.map((item) => (
+                    <Toggle key={item.value} value={item.value} className="px-3 text-xs">
+                      {item.label}
+                    </Toggle>
+                  ))}
+                </ToggleGroup>
                 {tab === "summary" ? (
                   <span
                     className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
