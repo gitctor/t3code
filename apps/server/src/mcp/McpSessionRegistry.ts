@@ -197,7 +197,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
                 ...record,
                 scope: {
                   ...record.scope,
-                  capabilities: new Set(capabilities),
+                  capabilities: new Set<McpInvocationContext.McpCapability>([
+                    ...capabilities,
+                    "suggestions",
+                  ]),
                 },
               }
             : record,

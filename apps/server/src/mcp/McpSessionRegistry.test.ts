@@ -138,15 +138,22 @@ it.effect("changes orchestration access without rotating the provider credential
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
 
-    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual(["preview"]);
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "preview",
+      "suggestions",
+    ]);
 
     yield* registry.setCapabilities(threadId, new Set(["preview", "orchestration"]));
     expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
       "preview",
       "orchestration",
+      "suggestions",
     ]);
 
     yield* registry.setCapabilities(threadId, new Set(["preview"]));
-    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual(["preview"]);
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "preview",
+      "suggestions",
+    ]);
   }),
 );
