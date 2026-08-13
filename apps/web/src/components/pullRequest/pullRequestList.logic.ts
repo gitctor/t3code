@@ -11,6 +11,16 @@ export interface PullRequestGroup {
   readonly entries: ReadonlyArray<PullRequestListEntry>;
 }
 
+export function resolvePullRequestPanelToggleState(input: {
+  readonly panelOpen: boolean;
+  readonly hasSelectedPullRequest: boolean;
+}) {
+  return {
+    available: input.hasSelectedPullRequest,
+    open: input.hasSelectedPullRequest && input.panelOpen,
+  };
+}
+
 /** The signed-in account per host, as the listing reports it. */
 export type PullRequestViewers = PullRequestListResult["viewers"];
 

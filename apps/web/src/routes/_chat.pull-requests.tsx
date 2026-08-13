@@ -35,6 +35,7 @@ import {
   rankPullRequestMatches,
   readPullRequestListSnapshot,
   resolveProjectScope,
+  resolvePullRequestPanelToggleState,
   withDiffStat,
   writePullRequestListSnapshot,
   scorePullRequestMatch,
@@ -903,14 +904,18 @@ function PullRequestsRouteView() {
       onChange={(query) => updateSearch({ q: query || undefined })}
     />
   );
+  const panelToggleState = resolvePullRequestPanelToggleState({
+    panelOpen: rightPanelState.isOpen,
+    hasSelectedPullRequest: selectedPullRequestSurface !== null,
+  });
   const panelToggleControls = (
     <PanelLayoutControls
       showTerminalControl={false}
       terminalAvailable={false}
       terminalOpen={false}
       terminalShortcutLabel={null}
-      rightPanelAvailable={rightPanelState.surfaces.length > 0}
-      rightPanelOpen={rightPanelState.isOpen}
+      rightPanelAvailable={panelToggleState.available}
+      rightPanelOpen={panelToggleState.open}
       rightPanelShortcutLabel={null}
       liveAgentCount={0}
       onToggleTerminal={() => undefined}

@@ -40,13 +40,14 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           <TooltipTrigger
             render={
               <Toggle
-                className="shrink-0 [-webkit-app-region:no-drag]"
+                className="shrink-0 disabled:opacity-50 [-webkit-app-region:no-drag]"
                 pressed={terminalOpen}
                 onPressedChange={onToggleTerminal}
                 aria-label="Toggle terminal drawer"
                 variant="ghost"
                 size="sm"
                 disabled={!terminalAvailable}
+                aria-disabled={!terminalAvailable || undefined}
               >
                 <PanelBottomIcon className="size-3.5" />
               </Toggle>
@@ -63,7 +64,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         <TooltipTrigger
           render={
             <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
+              className="shrink-0 disabled:opacity-50 [-webkit-app-region:no-drag]"
               pressed={rightPanelOpen}
               onPressedChange={onToggleRightPanel}
               aria-label={
@@ -74,6 +75,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               variant="ghost"
               size="sm"
               disabled={!rightPanelAvailable}
+              aria-disabled={!rightPanelAvailable || undefined}
             >
               <PanelRightIcon className="size-3.5" />
               {liveAgentCount > 0 ? (

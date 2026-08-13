@@ -14,10 +14,22 @@ import {
   scorePullRequestMatch,
   withDiffStat,
   resolveProjectScope,
+  resolvePullRequestPanelToggleState,
 } from "./pullRequestList.logic";
 
 const VIEWERS = { "github.com": "Bilal" } as const;
 const NO_VIEWERS = {} as const;
+
+describe("pull request panel toggle", () => {
+  it("is disabled and not pressed until a pull request is selected", () => {
+    expect(
+      resolvePullRequestPanelToggleState({ panelOpen: true, hasSelectedPullRequest: false }),
+    ).toEqual({ available: false, open: false });
+    expect(
+      resolvePullRequestPanelToggleState({ panelOpen: true, hasSelectedPullRequest: true }),
+    ).toEqual({ available: true, open: true });
+  });
+});
 
 function entry(overrides: Partial<PullRequestListEntry> & Pick<PullRequestListEntry, "number">) {
   return {
