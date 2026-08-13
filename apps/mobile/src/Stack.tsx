@@ -48,6 +48,7 @@ import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnv
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
+import { SuggestedTasksRouteScreen } from "./features/suggestions/SuggestedTasksRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
 import {
@@ -195,6 +196,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "usage",
       options: {
         title: "Usage",
+      },
+    }),
+    SettingsSuggestedTasks: createNativeStackScreen({
+      screen: SuggestedTasksRouteScreen,
+      linking: "suggested-tasks",
+      options: {
+        title: "Suggested tasks",
       },
     }),
   },
