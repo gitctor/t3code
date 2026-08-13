@@ -18,27 +18,31 @@ const message = {
   status: "queued",
   createdAt: "2026-08-12T12:00:00.000Z",
 } as const;
+const decodeThreadMessage = Schema.decodeUnknownSync(ThreadMessage);
+const encodeThreadMessage = Schema.encodeSync(ThreadMessage);
+const decodeThreadMessageCommand = Schema.decodeUnknownSync(ThreadMessageSendCommand);
+const encodeThreadMessageCommand = Schema.encodeSync(ThreadMessageSendCommand);
+const decodeThreadMessages = Schema.decodeUnknownSync(ThreadMessages);
+const decodeSendToThreadInput = Schema.decodeUnknownSync(SendToThreadInput);
 
 describe("ThreadMessage contracts", () => {
   it("round-trips the record and lifecycle command", () => {
-    const decodeMessage = Schema.decodeUnknownSync(ThreadMessage);
-    const encodeMessage = Schema.encodeSync(ThreadMessage);
-    const decoded = decodeMessage(message);
+    const decoded = decodeThreadMessage(message);
 
-    expect(decodeMessage(encodeMessage(decoded))).toEqual(message);
+    expect(decodeThreadMessage(encodeThreadMessage(decoded))).toEqual(message);
 
     const command = {
       type: "message.send",
       commandId: "command-1",
       message,
     } as const;
-    const decodeCommand = Schema.decodeUnknownSync(ThreadMessageSendCommand);
-    const encodeCommand = Schema.encodeSync(ThreadMessageSendCommand);
-    expect(decodeCommand(encodeCommand(decodeCommand(command)))).toEqual(command);
+    expect(
+      decodeThreadMessageCommand(encodeThreadMessageCommand(decodeThreadMessageCommand(command))),
+    ).toEqual(command);
   });
 
   it("keeps forward fields and isolates malformed array entries", () => {
-    const decoded = Schema.decodeUnknownSync(ThreadMessages)([
+    const decoded = decodeThreadMessages([
       { ...message, futureReceipt: "visible" },
       { ...message, messageId: "message-2", body: "x".repeat(20_001) },
     ]);
@@ -47,11 +51,9 @@ describe("ThreadMessage contracts", () => {
   });
 
   it("enforces the 20k body limit on records and tool input", () => {
+    expect(() => decodeThreadMessage({ ...message, body: "x".repeat(20_001) })).toThrow();
     expect(() =>
-      Schema.decodeUnknownSync(ThreadMessage)({ ...message, body: "x".repeat(20_001) }),
-    ).toThrow();
-    expect(() =>
-      Schema.decodeUnknownSync(SendToThreadInput)({
+      decodeSendToThreadInput({
         targetThreadId: "thread-target",
         body: "x".repeat(20_001),
       }),
