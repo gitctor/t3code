@@ -16,6 +16,10 @@ import {
   ProviderInstanceConfig,
   ProviderInstanceId,
 } from "./providerInstance.ts";
+import {
+  CrossThreadMessagingLevel,
+  DEFAULT_CROSS_THREAD_MESSAGING_LEVEL,
+} from "./threadMessage.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -607,6 +611,9 @@ export const BackgroundActivitySettings = Schema.Struct({
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  crossThreadMessaging: CrossThreadMessagingLevel.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CROSS_THREAD_MESSAGING_LEVEL)),
+  ),
   // Legacy token-by-token assistant output. Deliberately a fresh key (was
   // `enableAssistantStreaming`): decoding drops the old key, so everyone,
   // including prior opt-ins, resets to the buffered default.
@@ -786,6 +793,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
+  crossThreadMessaging: Schema.optionalKey(CrossThreadMessagingLevel),
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(

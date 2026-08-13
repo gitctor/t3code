@@ -18,6 +18,21 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ServerSettings cross-thread messaging", () => {
+  it("defaults off and accepts each operator level", () => {
+    expect(decodeServerSettings({}).crossThreadMessaging).toBe("off");
+    for (const level of ["off", "crew", "project"] as const) {
+      expect(decodeServerSettings({ crossThreadMessaging: level }).crossThreadMessaging).toBe(
+        level,
+      );
+      expect(decodeServerSettingsPatch({ crossThreadMessaging: level }).crossThreadMessaging).toBe(
+        level,
+      );
+    }
+    expect(() => decodeServerSettingsPatch({ crossThreadMessaging: "global" })).toThrow();
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);

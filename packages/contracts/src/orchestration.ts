@@ -34,6 +34,15 @@ import {
   TaskSuggestionRestoreCommand,
   TaskSuggestionRestoredPayload,
 } from "./taskSuggestion.ts";
+import {
+  CrossThreadMessageDeliveredPayload,
+  CrossThreadMessageRejectedPayload,
+  CrossThreadMessageSentPayload,
+  CrossThreadTranscriptSource,
+  ThreadMessageDeliverCommand,
+  ThreadMessageRejectCommand,
+  ThreadMessageSendCommand,
+} from "./threadMessage.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -260,6 +269,7 @@ export const OrchestrationMessage = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  crossThreadSource: Schema.optionalKey(CrossThreadTranscriptSource),
 });
 export type OrchestrationMessage = typeof OrchestrationMessage.Type;
 
@@ -1077,6 +1087,7 @@ const ThreadSystemMessageAppendCommand = Schema.Struct({
   text: TrimmedNonEmptyString,
   turnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
+  crossThreadSource: Schema.optionalKey(CrossThreadTranscriptSource),
 });
 
 const ThreadDispatchUpsertCommand = Schema.Struct({
@@ -1108,6 +1119,9 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadMessageSendCommand,
+  ThreadMessageDeliverCommand,
+  ThreadMessageRejectCommand,
   TaskSuggestionCreateCommand,
   TaskSuggestionAcceptCommand,
   TaskSuggestionDismissCommand,
@@ -1132,6 +1146,9 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "message.sent",
+  "message.delivered",
+  "message.rejected",
   "suggestion.created",
   "suggestion.accepted",
   "suggestion.dismissed",
@@ -1173,6 +1190,7 @@ export const OrchestrationEventType = Schema.Literals([
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
 export const OrchestrationAggregateKind = Schema.Literals([
+  "message",
   "crew",
   "project",
   "thread",
@@ -1350,6 +1368,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  crossThreadSource: Schema.optionalKey(CrossThreadTranscriptSource),
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1450,7 +1469,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([CrewId, ProjectId, ThreadId, TaskSuggestionId]),
+  aggregateId: Schema.Union([CrewId, ProjectId, ThreadId, TaskSuggestionId, MessageId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1459,6 +1478,21 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("message.sent"),
+    payload: CrossThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("message.delivered"),
+    payload: CrossThreadMessageDeliveredPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("message.rejected"),
+    payload: CrossThreadMessageRejectedPayload,
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("suggestion.created"),
