@@ -12,6 +12,7 @@
 import {
   ModelSelection,
   NonNegativeInt,
+  type CrewId,
   EventId,
   ThreadId,
   ProviderInterruptTurnInput,
@@ -219,12 +220,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-  const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
-    McpSessionRegistry.issueActiveMcpCredential({ threadId, providerInstanceId }).pipe(
+  const mcpCapabilitiesForCrew = (crewId: CrewId | undefined) =>
+    crewId === undefined
+      ? new Set(["preview", "suggestions"] as const)
+      : new Set(["preview", "suggestions", "orchestration"] as const);
+  const prepareMcpSession = (
+    threadId: ThreadId,
+    providerInstanceId: ProviderInstanceId,
+    crewId: CrewId | undefined,
+  ) =>
+    McpSessionRegistry.issueActiveMcpCredential({
+      threadId,
+      providerInstanceId,
+      capabilities: mcpCapabilitiesForCrew(crewId),
+    }).pipe(
       Effect.tap((credential) =>
         credential
           ? Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config))
           : Effect.void,
+      ),
+      Effect.tap((credential) =>
+        Effect.logDebug("prepared provider MCP scope before adapter session boot", {
+          threadId,
+          providerInstanceId,
+          credentialIssued: credential !== undefined,
+          orchestrationEnabled: crewId !== undefined,
+        }),
       ),
     );
   const clearMcpSession = (threadId: ThreadId) =>
@@ -379,6 +400,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const recoverSessionForThread = Effect.fn("recoverSessionForThread")(function* (input: {
     readonly binding: ProviderSessionDirectory.ProviderRuntimeBinding;
     readonly operation: string;
+    readonly crewId?: CrewId;
+    readonly additionalInstructions?: string;
   }) {
     const bindingInstanceId = yield* requireBindingInstanceId(input.operation, input.binding);
     yield* Effect.annotateCurrentSpan({
@@ -421,7 +444,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId, input.crewId);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -430,6 +453,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
+          ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
+          ...(input.additionalInstructions !== undefined
+            ? { additionalInstructions: input.additionalInstructions }
+            : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
@@ -465,6 +492,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly threadId: ThreadId;
     readonly operation: string;
     readonly allowRecovery: boolean;
+    readonly crewId?: CrewId;
+    readonly additionalInstructions?: string;
   }) {
     const bindingOption = yield* directory.getBinding(input.threadId);
     const binding = Option.getOrUndefined(bindingOption);
@@ -501,6 +530,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const recovered = yield* recoverSessionForThread({
       binding,
       operation: input.operation,
+      ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
+      ...(input.additionalInstructions !== undefined
+        ? { additionalInstructions: input.additionalInstructions }
+        : {}),
     });
     return {
       adapter: recovered.adapter,
@@ -617,13 +650,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
-        yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
-          threadId,
-          input.crewId === undefined
-            ? new Set(["preview", "suggestions"])
-            : new Set(["preview", "suggestions", "orchestration"]),
-        );
+        yield* prepareMcpSession(threadId, resolvedInstanceId, input.crewId);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -742,17 +769,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     let metricProvider = "unknown";
     let metricModel = input.modelSelection?.model;
     return yield* Effect.gen(function* () {
-      const routed = yield* resolveRoutableSession({
-        threadId: input.threadId,
-        operation: "ProviderService.sendTurn",
-        allowRecovery: true,
-      });
-      metricProvider = routed.adapter.provider;
-      metricModel = input.modelSelection?.model;
-      yield* Effect.annotateCurrentSpan({
-        "provider.kind": routed.adapter.provider,
-        ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
-      });
       // A turn is the clearest sign a session is still alive. The MCP
       // credential is minted once at session start and cannot be rotated into
       // an already-spawned agent process, so we keep the existing token valid
@@ -761,10 +777,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
         input.threadId,
-        input.crewId === undefined
-          ? new Set(["preview", "suggestions"])
-          : new Set(["preview", "suggestions", "orchestration"]),
+        mcpCapabilitiesForCrew(input.crewId),
       );
+      const routed = yield* resolveRoutableSession({
+        threadId: input.threadId,
+        operation: "ProviderService.sendTurn",
+        allowRecovery: true,
+        ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
+        ...(input.additionalInstructions !== undefined
+          ? { additionalInstructions: input.additionalInstructions }
+          : {}),
+      });
+      metricProvider = routed.adapter.provider;
+      metricModel = input.modelSelection?.model;
+      yield* Effect.annotateCurrentSpan({
+        "provider.kind": routed.adapter.provider,
+        ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
+      });
       const turn = yield* routed.adapter.sendTurn(input);
       yield* directory.upsert({
         threadId: input.threadId,

@@ -300,6 +300,33 @@ export const MessagingToolkitRegistrationLive = McpServer.toolkit(MessagingToolk
   Layer.provide(MessagingToolkitHandlersLive),
 );
 
+export const forwardMcpToolListChanges = Effect.fn("McpHttpServer.forwardToolListChanges")(
+  function* (
+    registry: McpSessionRegistry.McpSessionRegistryShape,
+    server: McpServer.McpServer["Service"],
+  ) {
+    yield* registry.toolListChanges.pipe(
+      Stream.runForEach((threadId) =>
+        server.notifications["notifications/tools/list_changed"]({}).pipe(
+          Effect.tap(() =>
+            Effect.logDebug("notified MCP clients that a thread tool catalog changed", {
+              threadId,
+            }),
+          ),
+        ),
+      ),
+    );
+  },
+);
+
+const McpToolListChangeNotificationsLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* McpSessionRegistry.McpSessionRegistry;
+    const server = yield* McpServer.McpServer;
+    yield* forwardMcpToolListChanges(registry, server).pipe(Effect.forkScoped);
+  }),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -312,4 +339,5 @@ export const layer = Layer.mergeAll(
   OrchestrationToolkitRegistrationLive,
   SuggestionsToolkitRegistrationLive,
   MessagingToolkitRegistrationLive,
+  McpToolListChangeNotificationsLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

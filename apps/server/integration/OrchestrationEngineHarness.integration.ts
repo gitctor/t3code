@@ -5,6 +5,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ApprovalRequestId,
   CodexSettings,
+  type ProviderSessionStartInput,
   ProviderDriverKind,
   type OrchestrationEvent,
   type OrchestrationThread,
@@ -236,6 +237,7 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   readonly realCodex?: boolean;
   readonly providerSnapshots?: ReadonlyArray<ServerProvider>;
   readonly serverSettings?: Parameters<typeof ServerSettingsService.layerTest>[0];
+  readonly onAdapterStartSession?: (input: ProviderSessionStartInput) => Effect.Effect<void>;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -251,6 +253,9 @@ export const makeOrchestrationIntegrationHarness = (
       ? null
       : yield* makeTestProviderAdapterHarness({
           provider,
+          ...(options?.onAdapterStartSession !== undefined
+            ? { onStartSession: options.onAdapterStartSession }
+            : {}),
         });
     const fakeRegistry = adapterHarness
       ? Layer.succeed(

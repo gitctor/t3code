@@ -32,6 +32,7 @@ import {
   ResolvedKeybindingRule,
   SUGGESTIONS_WS_METHODS,
   type ServerProvider,
+  type ProviderSessionStartInput,
   type TaskSuggestion,
   TaskSuggestionId,
   ThreadId,
@@ -110,6 +111,7 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import { makeRoutesLayer } from "./server.ts";
 import * as DispatchBroker from "./mcp/DispatchBroker.ts";
+import * as McpProviderSession from "./mcp/McpProviderSession.ts";
 import { isThreadDetailEvent, resolveAvailableEditorsForConfig } from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -197,6 +199,71 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+const decodeMcpToolListResponse = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      result: Schema.Struct({
+        tools: Schema.Array(Schema.Struct({ name: Schema.String })),
+      }),
+    }),
+  ),
+);
+
+const readMcpToolCatalogAtAdapterBoot = Effect.fn("readMcpToolCatalogAtAdapterBoot")(function* (
+  input: ProviderSessionStartInput,
+) {
+  const config = McpProviderSession.readMcpProviderSession(input.threadId);
+  if (config === undefined) {
+    return yield* Effect.die(
+      new Error(`Adapter booted without an MCP credential for thread '${input.threadId}'.`),
+    );
+  }
+  const httpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
+  const headers = {
+    accept: "application/json, text/event-stream",
+    authorization: config.authorizationHeader,
+  };
+  const initializeResponse = yield* httpClient.post(config.endpoint, {
+    headers,
+    body: HttpBody.text(
+      `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"adapter-boot-probe","version":"1.0.0"}}}`,
+      "application/json",
+    ),
+  });
+  if (initializeResponse.status < 200 || initializeResponse.status >= 300) {
+    return yield* Effect.die(
+      new Error(`MCP initialize failed with status ${initializeResponse.status}.`),
+    );
+  }
+  yield* initializeResponse.text;
+  const sessionId = initializeResponse.headers["mcp-session-id"];
+  if (sessionId === undefined) {
+    return yield* Effect.die(new Error("MCP initialize did not return a session id."));
+  }
+  const listResponse = yield* httpClient.post(config.endpoint, {
+    headers: {
+      ...headers,
+      "mcp-protocol-version": "2025-06-18",
+      "mcp-session-id": sessionId,
+    },
+    body: HttpBody.text(
+      `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+      "application/json",
+    ),
+  });
+  const rawBody = yield* listResponse.text;
+  if (listResponse.status < 200 || listResponse.status >= 300) {
+    return yield* Effect.die(
+      new Error(`MCP tools/list failed with status ${listResponse.status}: ${rawBody}`),
+    );
+  }
+  const decoded = yield* decodeMcpToolListResponse(rawBody).pipe(Effect.orDie);
+  return {
+    input,
+    rawBody,
+    toolNames: decoded.result.tools.map((tool) => tool.name),
+  };
+});
 const testEnvironmentDescriptor = {
   environmentId: EnvironmentId.make("environment-test"),
   label: "Test environment",
@@ -6217,6 +6284,242 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(
         Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
       ),
+    120_000,
+  );
+
+  effectIt.live(
+    "exposes orchestration MCP tools before fresh Codex and Claude planner adapters boot",
+    () =>
+      Effect.gen(function* () {
+        const now = "2026-08-14T13:00:00.000Z";
+        const crewlessBodies: string[] = [];
+        const plannerCases = [
+          {
+            label: "codex",
+            driver: ProviderDriverKind.make("codex"),
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4-mini",
+          },
+          {
+            label: "claude",
+            driver: ProviderDriverKind.make("claudeAgent"),
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-haiku-4-5",
+          },
+        ] as const;
+
+        for (const plannerCase of plannerCases) {
+          const crew = {
+            id: CrewId.make(`${plannerCase.label}_tools_visibility`),
+            name: `${plannerCase.label} tools visibility`,
+            planner: {
+              instanceId: plannerCase.instanceId,
+              model: plannerCase.model,
+            },
+            members: [{ instanceId: plannerCase.instanceId, role: "build" }],
+          } satisfies Crew;
+          const modelSelection = {
+            instanceId: plannerCase.instanceId,
+            model: plannerCase.model,
+          } as const;
+          const readyProvider: ServerProvider = {
+            instanceId: plannerCase.instanceId,
+            driver: plannerCase.driver,
+            displayName: plannerCase.label,
+            enabled: true,
+            installed: true,
+            version: "1.0.0",
+            status: "ready",
+            auth: { status: "authenticated" },
+            checkedAt: now,
+            availability: "available",
+            models: [
+              {
+                slug: plannerCase.model,
+                name: plannerCase.model,
+                isCustom: false,
+                isDefault: true,
+                capabilities: null,
+              },
+            ],
+            slashCommands: [],
+            skills: [],
+          };
+          const bootCatalogs: Array<{
+            readonly input: ProviderSessionStartInput;
+            readonly rawBody: string;
+            readonly toolNames: ReadonlyArray<string>;
+          }> = [];
+          const turnResponse = (suffix: string): TestTurnResponse => ({
+            events: [
+              {
+                type: "turn.started",
+                eventId: EventId.make(`${plannerCase.label}-tools-turn-started-${suffix}`),
+                provider: plannerCase.driver,
+                createdAt: now,
+                threadId: defaultThreadId,
+                turnId: `fixture-turn-${suffix}`,
+              },
+              {
+                type: "turn.completed",
+                eventId: EventId.make(`${plannerCase.label}-tools-turn-completed-${suffix}`),
+                provider: plannerCase.driver,
+                createdAt: now,
+                threadId: defaultThreadId,
+                turnId: `fixture-turn-${suffix}`,
+                status: "completed",
+              },
+            ],
+          });
+
+          yield* Effect.scoped(
+            Effect.acquireUseRelease(
+              makeOrchestrationIntegrationHarness({
+                provider: plannerCase.driver,
+                providerSnapshots: [readyProvider],
+                serverSettings: { crews: [crew] },
+                onAdapterStartSession: (input) =>
+                  Effect.gen(function* () {
+                    bootCatalogs.push(
+                      yield* readMcpToolCatalogAtAdapterBoot(input).pipe(Effect.orDie),
+                    );
+                  }),
+              }),
+              (harness) =>
+                Effect.gen(function* () {
+                  yield* harness.engine.dispatch({
+                    type: "project.create",
+                    commandId: CommandId.make(`${plannerCase.label}-tools-project-create`),
+                    projectId: defaultProjectId,
+                    title: `${plannerCase.label} tools project`,
+                    workspaceRoot: harness.workspaceDir,
+                    defaultModelSelection: modelSelection,
+                    createdAt: now,
+                  });
+
+                  yield* buildAppUnderTest({
+                    layers: {
+                      orchestrationEngine: harness.engine,
+                      projectionSnapshotQuery: harness.snapshotQuery,
+                      providerRegistry: { getProviders: Effect.succeed([readyProvider]) },
+                      serverSettings: harness.serverSettings,
+                    },
+                  });
+
+                  yield* harness.adapterHarness!.queueTurnResponseForNextSession(
+                    turnResponse("crew"),
+                  );
+                  const crewThreadId = ThreadId.make(`${plannerCase.label}-crew-tools-thread`);
+                  yield* harness.engine.dispatch({
+                    type: "thread.create",
+                    commandId: CommandId.make(`${plannerCase.label}-crew-thread-create`),
+                    threadId: crewThreadId,
+                    projectId: defaultProjectId,
+                    title: `${plannerCase.label} crew tools`,
+                    modelSelection,
+                    interactionMode: "default",
+                    runtimeMode: "approval-required",
+                    branch: "main",
+                    worktreePath: harness.workspaceDir,
+                    createdAt: now,
+                  });
+                  yield* harness.engine.dispatch({
+                    type: "thread.turn.start",
+                    commandId: CommandId.make(`${plannerCase.label}-crew-turn`),
+                    threadId: crewThreadId,
+                    message: {
+                      messageId: MessageId.make(`${plannerCase.label}-crew-message`),
+                      role: "user",
+                      text: "Run the crew test flight.",
+                      attachments: [],
+                    },
+                    modelSelection,
+                    interactionMode: "default",
+                    runtimeMode: "approval-required",
+                    crewId: crew.id,
+                    createdAt: now,
+                  });
+                  yield* harness.waitForReceipt(
+                    (receipt) =>
+                      receipt.type === "turn.processing.quiesced" &&
+                      receipt.threadId === crewThreadId,
+                  );
+
+                  const crewCatalog = bootCatalogs.find(
+                    (catalog) => catalog.input.threadId === crewThreadId,
+                  );
+                  assert.isDefined(crewCatalog);
+                  assert.equal(crewCatalog.input.crewId, crew.id);
+                  assert.deepEqual(
+                    ["dispatch", "await_dispatch", "list_dispatches"].filter(
+                      (toolName) => !crewCatalog.toolNames.includes(toolName),
+                    ),
+                    [],
+                  );
+
+                  const crewlessThreadId = ThreadId.make(
+                    `${plannerCase.label}-crewless-tools-thread`,
+                  );
+                  yield* harness.engine.dispatch({
+                    type: "thread.create",
+                    commandId: CommandId.make(`${plannerCase.label}-crewless-thread-create`),
+                    threadId: crewlessThreadId,
+                    projectId: defaultProjectId,
+                    title: `${plannerCase.label} crewless tools`,
+                    modelSelection,
+                    interactionMode: "default",
+                    runtimeMode: "approval-required",
+                    branch: "main",
+                    worktreePath: harness.workspaceDir,
+                    createdAt: now,
+                  });
+                  yield* harness.adapterHarness!.queueTurnResponseForNextSession(
+                    turnResponse("crewless"),
+                  );
+                  yield* harness.engine.dispatch({
+                    type: "thread.turn.start",
+                    commandId: CommandId.make(`${plannerCase.label}-crewless-turn`),
+                    threadId: crewlessThreadId,
+                    message: {
+                      messageId: MessageId.make(`${plannerCase.label}-crewless-message`),
+                      role: "user",
+                      text: "Run without a crew.",
+                      attachments: [],
+                    },
+                    modelSelection,
+                    interactionMode: "default",
+                    runtimeMode: "approval-required",
+                    createdAt: now,
+                  });
+                  yield* harness.waitForReceipt(
+                    (receipt) =>
+                      receipt.type === "turn.processing.quiesced" &&
+                      receipt.threadId === crewlessThreadId,
+                  );
+
+                  const crewlessCatalog = bootCatalogs.find(
+                    (catalog) => catalog.input.threadId === crewlessThreadId,
+                  );
+                  assert.isDefined(crewlessCatalog);
+                  assert.isUndefined(crewlessCatalog.input.crewId);
+                  assert.deepEqual(
+                    crewlessCatalog.toolNames.filter((toolName) =>
+                      ["dispatch", "await_dispatch", "list_dispatches"].includes(toolName),
+                    ),
+                    [],
+                  );
+                  crewlessBodies.push(crewlessCatalog.rawBody);
+                }),
+              (harness) => harness.dispose,
+            ),
+          ).pipe(
+            Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
+          );
+        }
+
+        assert.equal(crewlessBodies.length, plannerCases.length);
+        assert.equal(crewlessBodies[1], crewlessBodies[0]);
+      }),
     120_000,
   );
 

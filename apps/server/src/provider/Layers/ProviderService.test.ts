@@ -12,6 +12,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
+  CrewId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -1229,6 +1230,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
         threadId: initial.threadId,
         input: "resume",
         attachments: [],
+        crewId: CrewId.make("recovery-crew"),
+        additionalInstructions: "Recovered crew instructions.",
       });
 
       assert.equal(routing.codex.startSession.mock.calls.length, 1);
@@ -1240,11 +1243,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
           cwd?: string;
           resumeCursor?: unknown;
           threadId?: string;
+          crewId?: string;
+          additionalInstructions?: string;
         };
         assert.equal(startPayload.provider, "codex");
         assert.equal(startPayload.cwd, "/tmp/project-send-turn");
         assert.deepEqual(startPayload.resumeCursor, initial.resumeCursor);
         assert.equal(startPayload.threadId, initial.threadId);
+        assert.equal(startPayload.crewId, "recovery-crew");
+        assert.equal(startPayload.additionalInstructions, "Recovered crew instructions.");
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
     }),
@@ -1275,6 +1282,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
         threadId: initial.threadId,
         input: "resume with claude",
         attachments: [],
+        crewId: CrewId.make("claude-recovery-crew"),
+        additionalInstructions: "Recovered Claude crew instructions.",
       });
 
       assert.equal(routing.claude.startSession.mock.calls.length, 1);
@@ -1287,6 +1296,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
           modelSelection?: unknown;
           resumeCursor?: unknown;
           threadId?: string;
+          crewId?: string;
+          additionalInstructions?: string;
         };
         assert.equal(startPayload.provider, "claudeAgent");
         assert.equal(startPayload.cwd, "/tmp/project-claude-send-turn");
@@ -1298,6 +1309,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
         );
         assert.deepEqual(startPayload.resumeCursor, initial.resumeCursor);
         assert.equal(startPayload.threadId, initial.threadId);
+        assert.equal(startPayload.crewId, "claude-recovery-crew");
+        assert.equal(startPayload.additionalInstructions, "Recovered Claude crew instructions.");
       }
       assert.equal(routing.claude.sendTurn.mock.calls.length, 1);
     }),

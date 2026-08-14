@@ -2,7 +2,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import { HttpServer } from "effect/unstable/http";
+import * as Stream from "effect/Stream";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -148,7 +151,10 @@ it.effect("changes orchestration access without rotating the provider credential
       "suggestions",
     ]);
 
+    const firstChange = yield* registry.toolListChanges.pipe(Stream.runHead, Effect.forkChild);
+    yield* Effect.yieldNow;
     yield* registry.setCapabilities(threadId, new Set(["preview", "orchestration"]));
+    expect(yield* Fiber.join(firstChange)).toEqual(Option.some(threadId));
     expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
       "preview",
       "orchestration",
@@ -159,6 +165,24 @@ it.effect("changes orchestration access without rotating the provider credential
     expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
       "preview",
       "suggestions",
+    ]);
+  }),
+);
+
+it.effect("issues a fresh credential with orchestration already attached", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-fresh-crew"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview", "suggestions", "orchestration"]),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "preview",
+      "suggestions",
+      "orchestration",
     ]);
   }),
 );

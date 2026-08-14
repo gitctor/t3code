@@ -4,6 +4,7 @@ import {
   ProviderApprovalDecision,
   ProviderRuntimeEvent,
   type ProviderSendTurnInput,
+  type ProviderSessionStartInput,
   RuntimeSessionId,
   ProviderSession,
   ProviderTurnStartResult,
@@ -202,6 +203,7 @@ export interface TestProviderAdapterHarness {
 
 interface MakeTestProviderAdapterHarnessOptions {
   readonly provider?: ProviderDriverKind;
+  readonly onStartSession?: (input: ProviderSessionStartInput) => Effect.Effect<void>;
 }
 
 function nowIso(): string {
@@ -257,6 +259,10 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             operation: "startSession",
             issue: `Expected provider '${provider}' but received '${input.provider}'.`,
           });
+        }
+
+        if (options?.onStartSession !== undefined) {
+          yield* options.onStartSession(input);
         }
 
         sessionCount += 1;

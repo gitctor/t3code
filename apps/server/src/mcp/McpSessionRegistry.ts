@@ -4,6 +4,8 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
@@ -15,6 +17,7 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -36,6 +39,7 @@ export interface McpSessionRegistryShape {
     threadId: ThreadId,
     capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
   ) => Effect.Effect<void>;
+  readonly toolListChanges: Stream.Stream<ThreadId>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeAll: Effect.Effect<void>;
@@ -102,6 +106,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const environmentId = yield* environment.getEnvironmentId;
   const httpServer = yield* HttpServer.HttpServer;
   const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
+  const toolListChanges = yield* PubSub.unbounded<ThreadId>();
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
   const getCrossThreadMessaging = options.getCrossThreadMessaging ?? Effect.succeed("off" as const);
@@ -131,13 +136,14 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
       const crossThreadMessaging = yield* getCrossThreadMessaging;
+      const requestedCapabilities = request.capabilities ?? new Set(["preview", "suggestions"]);
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set([
-          "preview",
+          ...requestedCapabilities,
           "suggestions",
           ...(crossThreadMessaging === "off" ? [] : (["messaging"] as const)),
         ]),
@@ -196,26 +202,44 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const setCapabilities: McpSessionRegistryShape["setCapabilities"] = Effect.fn(
     "McpSessionRegistry.setCapabilities",
   )(function* (threadId, capabilities) {
-    yield* SynchronizedRef.update(state, ({ records }) => ({
-      records: new Map(
-        Array.from(records, ([tokenHash, record]) => [
-          tokenHash,
-          record.scope.threadId === threadId
-            ? {
-                ...record,
-                scope: {
-                  ...record.scope,
-                  capabilities: new Set<McpInvocationContext.McpCapability>([
-                    ...capabilities,
-                    "suggestions",
-                    ...(record.scope.capabilities.has("messaging") ? (["messaging"] as const) : []),
-                  ]),
-                },
-              }
-            : record,
-        ]),
-      ),
-    }));
+    const changed = yield* SynchronizedRef.modify(state, ({ records }) => {
+      let changed = false;
+      const nextRecords = new Map(
+        Array.from(records, ([tokenHash, record]) => {
+          if (record.scope.threadId !== threadId) {
+            return [tokenHash, record] as const;
+          }
+          const nextCapabilities = new Set<McpInvocationContext.McpCapability>([
+            ...capabilities,
+            "suggestions",
+            ...(record.scope.capabilities.has("messaging") ? (["messaging"] as const) : []),
+          ]);
+          const isUnchanged =
+            nextCapabilities.size === record.scope.capabilities.size &&
+            Array.from(nextCapabilities).every((capability) =>
+              record.scope.capabilities.has(capability),
+            );
+          if (isUnchanged) {
+            return [tokenHash, record] as const;
+          }
+          changed = true;
+          return [
+            tokenHash,
+            {
+              ...record,
+              scope: {
+                ...record.scope,
+                capabilities: nextCapabilities,
+              },
+            },
+          ] as const;
+        }),
+      );
+      return [changed, { records: nextRecords }] as const;
+    });
+    if (changed) {
+      yield* PubSub.publish(toolListChanges, threadId);
+    }
   });
 
   const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
@@ -228,6 +252,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     resolve,
     touch,
     setCapabilities,
+    toolListChanges: Stream.fromPubSub(toolListChanges),
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
         yield* revokeWhere((record) => record.scope.providerSessionId === providerSessionId);

@@ -4,6 +4,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
@@ -102,6 +104,7 @@ it.effect("hides orchestration tools on the authenticated crewless HTTP session"
         resolve: (token) => Effect.succeed(token === "crewless" ? invocation : undefined),
         touch: () => Effect.void,
         setCapabilities: () => Effect.void,
+        toolListChanges: Stream.empty,
         revokeProviderSession: () => Effect.void,
         revokeThread: () => Effect.void,
         revokeAll: Effect.void,
@@ -151,6 +154,33 @@ it.effect("hides orchestration tools on the authenticated crewless HTTP session"
       expect(body).not.toContain('"name":"send_to_thread"');
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("emits tools/list_changed when a thread capability catalog changes", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const toolListChanges = yield* PubSub.unbounded<ThreadId>();
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: () => Effect.die("unused"),
+        touch: () => Effect.void,
+        setCapabilities: () => Effect.void,
+        toolListChanges: Stream.fromPubSub(toolListChanges),
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const server = yield* McpServer.McpServer.make;
+      yield* McpHttpServer.forwardMcpToolListChanges(registry, server).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      yield* PubSub.publish(toolListChanges, threadId);
+      const notification = yield* Queue.take(server.notificationsQueue);
+
+      expect(notification.tag).toBe("notifications/tools/list_changed");
+      expect(notification.payload).toEqual({});
+    }),
+  ),
 );
 
 it.effect("returns bounded structural preview snapshot failures", () =>
