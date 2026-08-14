@@ -4,6 +4,7 @@ import {
   type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
+  type ProjectId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { memo, useEffect, useMemo, useState } from "react";
@@ -41,6 +42,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   disabled?: boolean;
   terminalOpen?: boolean;
   environmentId?: EnvironmentId;
+  projectId?: ProjectId | null;
   crews?: ReadonlyArray<Crew>;
   activeCrewId?: CrewId | null;
   onCrewSelect?: (crew: Crew) => void;
@@ -219,6 +221,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           modelOptionsByInstance={props.modelOptionsByInstance}
           terminalOpen={props.terminalOpen ?? false}
           {...(props.environmentId ? { environmentId: props.environmentId } : {})}
+          projectId={props.projectId ?? null}
           crews={props.crews ?? []}
           activeCrewId={props.activeCrewId ?? null}
           {...(props.onCrewSelect ? { onCrewSelect: props.onCrewSelect } : {})}

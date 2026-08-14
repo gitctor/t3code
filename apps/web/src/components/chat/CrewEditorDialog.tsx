@@ -3,6 +3,7 @@ import {
   type CrewMember,
   type EnvironmentId,
   type ModelSelection,
+  type ProjectId,
   type ProviderInstanceId,
   type ProviderOptionSelection,
 } from "@t3tools/contracts";
@@ -35,6 +36,7 @@ import {
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { CrewTestFlightButton } from "./CrewTestFlightButton";
 
 type DraftMember = {
   readonly key: string;
@@ -64,6 +66,7 @@ export function CrewEditorDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly environmentId: EnvironmentId;
+  readonly projectId?: ProjectId | null;
   readonly crews: ReadonlyArray<Crew>;
   readonly instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly currentSelection?: ModelSelection | null;
@@ -529,7 +532,7 @@ export function CrewEditorDialog(props: {
           </fieldset>
         </DialogPanel>
         <DialogFooter className="sm:justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             {props.allowDelete && props.initialCrew ? (
               <Button
                 type="button"
@@ -539,6 +542,17 @@ export function CrewEditorDialog(props: {
               >
                 Delete crew
               </Button>
+            ) : null}
+            {props.initialCrew ? (
+              <CrewTestFlightButton
+                environmentId={props.environmentId}
+                projectId={props.projectId ?? null}
+                crew={props.initialCrew}
+                instanceEntries={props.instanceEntries}
+                showLabel
+                variant="outline"
+                onStarted={() => props.onOpenChange(false)}
+              />
             ) : null}
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">

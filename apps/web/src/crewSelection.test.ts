@@ -1,5 +1,6 @@
 import {
   CrewId,
+  isRunnableCrew,
   ProviderDriverKind,
   ProviderInstanceId,
   type Crew,
@@ -12,6 +13,7 @@ import {
   CREW_UNAVAILABLE_COPY,
   getCrewUnavailableReason,
   makeCrewId,
+  resolveCrewForEntries,
   sortCrews,
 } from "./crewSelection";
 
@@ -60,6 +62,14 @@ describe("crew picker availability", () => {
     const noMembers = deriveProviderInstanceEntries([provider("planner")]);
     expect(getCrewUnavailableReason(crew("no-members"), noMembers)).toBe("no-available-members");
     expect(CREW_UNAVAILABLE_COPY["no-available-members"]).toBe("No crew members are available");
+  });
+
+  it("resolves the same runnable gate used by test-flight actions", () => {
+    const entries = deriveProviderInstanceEntries([provider("planner"), provider("builder")]);
+    expect(isRunnableCrew(resolveCrewForEntries(crew("ready"), entries))).toBe(true);
+    expect(isRunnableCrew(resolveCrewForEntries(crew("missing-member"), entries.slice(0, 1)))).toBe(
+      false,
+    );
   });
 
   it("sorts recent crews first and falls back to name", () => {

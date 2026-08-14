@@ -4,6 +4,7 @@ import {
   type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
+  type ProjectId,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
@@ -94,6 +95,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   terminalOpen: boolean;
   environmentId?: EnvironmentId;
+  projectId?: ProjectId | null;
   crews?: ReadonlyArray<Crew>;
   activeCrewId?: CrewId | null;
   onCrewSelect?: (crew: Crew) => void;
@@ -660,6 +662,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         {selectedInstanceId === "orchestrate" && props.environmentId && props.onCrewSelect ? (
           <CrewPickerPane
             environmentId={props.environmentId}
+            projectId={props.projectId ?? null}
             crews={props.crews ?? []}
             instanceEntries={instanceEntries}
             currentSelection={{ instanceId: props.activeInstanceId, model: props.model }}
@@ -717,6 +720,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 <div className="max-h-36 shrink-0 overflow-hidden border-b border-border/70 bg-muted/20">
                   <CrewPickerPane
                     environmentId={props.environmentId}
+                    projectId={props.projectId ?? null}
                     crews={props.crews ?? []}
                     instanceEntries={instanceEntries}
                     currentSelection={{ instanceId: props.activeInstanceId, model: props.model }}

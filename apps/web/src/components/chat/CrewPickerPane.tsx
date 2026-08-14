@@ -3,6 +3,7 @@ import {
   type CrewId,
   type EnvironmentId,
   type ModelSelection,
+  type ProjectId,
   type ProviderOptionSelection,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import { CrewTestFlightButton } from "./CrewTestFlightButton";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -61,6 +63,7 @@ function seatTooltip(crew: Crew, entries: ReadonlyMap<string, ProviderInstanceEn
 
 export function CrewPickerPane(props: {
   readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId | null;
   readonly crews: ReadonlyArray<Crew>;
   readonly instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly currentSelection: ModelSelection;
@@ -215,9 +218,8 @@ export function CrewPickerPane(props: {
                   >
                     <button
                       type="button"
-                      // pr-20 clears the absolutely-positioned trailing cluster (jump key +
-                      // edit + favorite ≈ 80px) on all three row lines, not just the name.
-                      className="min-w-0 flex-1 pr-20 text-left"
+                      // Keep all three lines clear of the trailing jump/action cluster.
+                      className="min-w-0 flex-1 pr-28 text-left"
                       onClick={() => {
                         if (reason) {
                           openEditor(crew);
@@ -293,6 +295,13 @@ export function CrewPickerPane(props: {
                           {jumpLabel}
                         </span>
                       ) : null}
+                      <CrewTestFlightButton
+                        environmentId={props.environmentId}
+                        projectId={props.projectId}
+                        crew={crew}
+                        instanceEntries={props.instanceEntries}
+                        {...(props.onRequestClose ? { onStarted: props.onRequestClose } : {})}
+                      />
                       <Button
                         size="icon-xs"
                         variant="ghost"

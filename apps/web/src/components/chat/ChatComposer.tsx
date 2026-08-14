@@ -3230,6 +3230,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     triggerClassName="-ms-px"
                     terminalOpen={terminalOpen}
                     environmentId={environmentId}
+                    projectId={activeThread?.projectId ?? null}
                     crews={crews}
                     activeCrewId={effectiveActiveCrewId}
                     onCrewSelect={handleCrewSelect}
@@ -3364,6 +3365,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           key={crewEditorRequest.crew?.id ?? "new"}
           open
           environmentId={environmentId}
+          projectId={activeThread?.projectId ?? null}
           crews={crews}
           instanceEntries={providerInstanceEntries}
           currentSelection={selectedModelSelection}

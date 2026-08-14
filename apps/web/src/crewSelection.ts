@@ -1,4 +1,9 @@
-import { CrewId, type Crew, type CrewUnavailableReason } from "@t3tools/contracts";
+import {
+  CrewId,
+  type Crew,
+  type CrewUnavailableReason,
+  type ResolvedCrew,
+} from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "./providerInstances";
 
@@ -17,6 +22,20 @@ export function isCrewInstanceReady(entry: ProviderInstanceEntry | undefined): b
     entry.status === "ready" &&
     entry.snapshot.auth.status !== "unauthenticated",
   );
+}
+
+export function resolveCrewForEntries(
+  crew: Crew,
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): ResolvedCrew {
+  const byId = new Map(entries.map((entry) => [entry.instanceId, entry]));
+  return {
+    crew,
+    plannerAvailable: isCrewInstanceReady(byId.get(crew.planner.instanceId)),
+    availableMemberIds: crew.members
+      .filter((member) => isCrewInstanceReady(byId.get(member.instanceId)))
+      .map((member) => member.instanceId),
+  };
 }
 
 export function getCrewUnavailableReason(
