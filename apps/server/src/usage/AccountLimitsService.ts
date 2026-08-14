@@ -294,10 +294,17 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const seedFromHistoryBestEffort = (nowMs: number) =>
+    maybeSeedFromHistory(nowMs).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logDebug("Account limit history seed failed; continuing without it.", { cause }),
+      ),
+    );
+
   const readSummary = Effect.fn("AccountLimitsService.readSummary")(function* () {
     yield* ensureLoaded;
     const seedNowMs = yield* Clock.currentTimeMillis;
-    yield* maybeSeedFromHistory(seedNowMs).pipe(Effect.catchCause(() => Effect.void));
+    yield* seedFromHistoryBestEffort(seedNowMs);
     yield* liveRefresh.run().pipe(Effect.catchCause(() => Effect.void));
     const readAtMs = yield* Clock.currentTimeMillis;
     return {
@@ -311,7 +318,7 @@ export const make = Effect.gen(function* () {
   // historical limits without needing to open Usage first.
   yield* ensureLoaded;
   const startupNowMs = yield* Clock.currentTimeMillis;
-  yield* maybeSeedFromHistory(startupNowMs).pipe(Effect.catchCause(() => Effect.void));
+  yield* seedFromHistoryBestEffort(startupNowMs);
 
   const registerLiveRefresh = (refresh: () => Effect.Effect<void>) =>
     Effect.sync(() => {

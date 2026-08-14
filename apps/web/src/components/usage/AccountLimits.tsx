@@ -26,6 +26,7 @@ import {
   ACCOUNT_LIMIT_PROVIDER_LABEL,
   ACCOUNT_LIMIT_PROVIDER_MARK,
   ACCOUNT_LIMIT_PROVIDER_ORDER,
+  accountLimitEmptyStateCopy,
   PROVIDER_LABEL,
   PROVIDER_MARK,
   PROVIDER_ORDER,
@@ -227,11 +228,7 @@ export function AccountLimitsHoverCard() {
             </div>
             {snapshot === undefined || snapshot.windows.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
-                {provider === "kimi"
-                  ? "Limits not reported by provider."
-                  : snapshot === undefined && isSettling
-                    ? "Loading…"
-                    : "No limit data yet"}
+                {accountLimitEmptyStateCopy(provider, snapshot === undefined && isSettling)}
               </p>
             ) : (
               snapshot.windows.map((window) => (
@@ -292,11 +289,7 @@ export function AccountLimitsSection() {
               </div>
               {snapshot === undefined || snapshot.windows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {provider === "kimi"
-                    ? "Limits not reported by provider."
-                    : snapshot === undefined && isSettling
-                      ? "Loading…"
-                      : "No limit data yet"}
+                  {accountLimitEmptyStateCopy(provider, snapshot === undefined && isSettling)}
                 </p>
               ) : (
                 snapshot.windows.map((window) => {

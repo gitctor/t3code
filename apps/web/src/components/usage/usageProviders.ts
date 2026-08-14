@@ -54,3 +54,15 @@ export const ACCOUNT_LIMIT_PROVIDER_MARK: Record<AccountLimitProviderKind, Icon>
   ...PROVIDER_MARK,
   kimi: KimiIcon,
 };
+
+export function accountLimitEmptyStateCopy(
+  provider: AccountLimitProviderKind,
+  isLoading: boolean,
+): string {
+  if (provider === "kimi") return "Limits not reported by provider.";
+  if (isLoading) return "Loading…";
+  if (provider === "claude") {
+    return "No limit data yet — appears after your first Claude turn.";
+  }
+  return "No limit data yet";
+}
