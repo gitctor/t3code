@@ -52,6 +52,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   isProviderAvailable,
+  isRunnableCrew,
   MessageId,
   type ModelSelection,
   type ServerProvider,
@@ -82,6 +83,8 @@ import {
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { isCrewPersistenceCommand, persistCrewCommand } from "./orchestration/CrewPersistence.ts";
+import { buildCrewTestFlightPlan } from "./orchestration/CrewTestFlight.ts";
+import { CrewRegistry } from "./orchestration/Services/CrewRegistry.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { taskSuggestionFromProjection } from "./orchestration/TaskSuggestionProjection.ts";
@@ -385,6 +388,7 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const crewRegistry = yield* CrewRegistry;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -1262,6 +1266,79 @@ const makeWsRpcLayer = (
             : suggestionError("acceptance-failed", error.message),
       );
 
+      const startCrewTestFlight = Effect.fn("CrewTestFlight.start")(function* (input: {
+        readonly crewId: Parameters<typeof crewRegistry.resolve>[0];
+        readonly projectId: ProjectId;
+      }) {
+        const crewEntry = yield* crewRegistry.resolve(input.crewId);
+        if (!crewEntry || !isRunnableCrew(crewEntry.resolvedCrew)) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: `Crew '${input.crewId}' is not runnable.`,
+          });
+        }
+        const project = yield* projectionSnapshotQuery
+          .getProjectShellById(input.projectId)
+          .pipe(Effect.map(Option.getOrUndefined));
+        if (!project) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: `Project '${input.projectId}' is unavailable.`,
+          });
+        }
+        const providers = yield* providerRegistry.getProviders;
+        const plan = buildCrewTestFlightPlan(crewEntry, providers);
+        if (!plan) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: `Crew '${input.crewId}' has no runnable planner model.`,
+          });
+        }
+
+        const [threadUuid, messageUuid] = yield* Effect.all([randomUUID, randomUUID]);
+        const threadId = ThreadId.make(threadUuid);
+        const createdAt = yield* nowIso;
+        const title = `Test flight — ${crewEntry.resolvedCrew.crew.name}`;
+        const localStatus = yield* gitWorkflow.localStatus({ cwd: project.workspaceRoot }).pipe(
+          Effect.orElseSucceed(() => ({
+            isRepo: false,
+            hasPrimaryRemote: false,
+            isDefaultRef: false,
+            refName: null,
+            hasWorkingTreeChanges: false,
+            workingTree: { files: [], insertions: 0, deletions: 0 },
+          })),
+        );
+
+        yield* dispatchNormalizedCommand({
+          type: "thread.turn.start",
+          commandId: yield* serverCommandId("crew-test-flight-turn"),
+          threadId,
+          message: {
+            messageId: MessageId.make(messageUuid),
+            role: "user",
+            text: plan.prompt,
+            attachments: [],
+          },
+          modelSelection: plan.plannerModelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          bootstrap: {
+            createThread: {
+              projectId: input.projectId,
+              title,
+              modelSelection: plan.plannerModelSelection,
+              runtimeMode: "approval-required",
+              interactionMode: "default",
+              branch: localStatus.refName,
+              worktreePath: null,
+              createdAt,
+            },
+          },
+          crewId: input.crewId,
+          crewTestFlight: plan.turnInput,
+          createdAt,
+        });
+        return { threadId };
+      });
+
       return WsRpcGroup.of({
         [SUGGESTIONS_WS_METHODS.list]: (input) =>
           observeRpcEffect(
@@ -1402,6 +1479,21 @@ const makeWsRpcLayer = (
                   ? cause
                   : new OrchestrationDispatchCommandError({
                       message: "Failed to dispatch orchestration command",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.startCrewTestFlight]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.startCrewTestFlight,
+            startCrewTestFlight(input).pipe(
+              Effect.mapError((cause) =>
+                isOrchestrationDispatchCommandError(cause)
+                  ? cause
+                  : new OrchestrationDispatchCommandError({
+                      message: "Failed to start crew test flight",
                       cause,
                     }),
               ),

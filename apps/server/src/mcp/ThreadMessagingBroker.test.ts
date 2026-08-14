@@ -319,6 +319,7 @@ function brokerHarness(options: HarnessOptions = {}) {
                 threadId: projectThreadId,
                 messageId: options.pendingTargetMessageId,
                 crewId: null,
+                crewTestFlight: null,
                 sourceProposedPlanThreadId: null,
                 sourceProposedPlanId: null,
                 requestedAt: createdAt,

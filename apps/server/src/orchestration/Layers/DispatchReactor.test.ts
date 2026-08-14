@@ -209,6 +209,7 @@ it.effect("cancels live children on parent interruption and warns on parent comp
                   turnId: parentTurnId,
                   pendingMessageId: null,
                   crewId: null,
+                  crewTestFlight: null,
                   sourceProposedPlanThreadId: null,
                   sourceProposedPlanId: null,
                   assistantMessageId: null,

@@ -77,7 +77,7 @@ const activityProgress = (
   };
 };
 
-const make = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const dispatchRepository = yield* ProjectionDispatchRepository;

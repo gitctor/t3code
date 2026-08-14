@@ -1172,6 +1172,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             messageId: event.payload.messageId,
             crewId: event.payload.crewId ?? null,
+            crewTestFlight: event.payload.crewTestFlight ?? null,
             sourceProposedPlanThreadId: event.payload.sourceProposedPlan?.threadId ?? null,
             sourceProposedPlanId: event.payload.sourceProposedPlan?.planId ?? null,
             requestedAt: event.payload.createdAt,
@@ -1263,6 +1264,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               crewId:
                 existingTurn.value.crewId ??
                 (Option.isSome(pendingTurnStart) ? pendingTurnStart.value.crewId : null),
+              crewTestFlight:
+                existingTurn.value.crewTestFlight ??
+                (Option.isSome(pendingTurnStart) ? pendingTurnStart.value.crewTestFlight : null),
               sourceProposedPlanThreadId:
                 existingTurn.value.sourceProposedPlanThreadId ??
                 (Option.isSome(pendingTurnStart)
@@ -1292,6 +1296,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 ? pendingTurnStart.value.messageId
                 : null,
               crewId: Option.isSome(pendingTurnStart) ? pendingTurnStart.value.crewId : null,
+              crewTestFlight: Option.isSome(pendingTurnStart)
+                ? pendingTurnStart.value.crewTestFlight
+                : null,
               sourceProposedPlanThreadId: Option.isSome(pendingTurnStart)
                 ? pendingTurnStart.value.sourceProposedPlanThreadId
                 : null,
@@ -1365,6 +1372,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             pendingMessageId: null,
             crewId: null,
+            crewTestFlight: null,
             sourceProposedPlanThreadId: null,
             sourceProposedPlanId: null,
             assistantMessageId: event.payload.messageId,
@@ -1403,6 +1411,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             pendingMessageId: null,
             crewId: null,
+            crewTestFlight: null,
             sourceProposedPlanThreadId: null,
             sourceProposedPlanId: null,
             assistantMessageId: null,
@@ -1459,6 +1468,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.threadId,
             pendingMessageId: null,
             crewId: null,
+            crewTestFlight: null,
             sourceProposedPlanThreadId: null,
             sourceProposedPlanId: null,
             assistantMessageId: event.payload.assistantMessageId,

@@ -82,29 +82,35 @@ layer("ProjectionDispatchRepository", (it) => {
     }),
   );
 
-  it.effect("carries the selected crew from pending start into the concrete turn", () =>
+  it.effect("carries the selected crew and test-flight overrides into the concrete turn", () =>
     Effect.gen(function* () {
       const turns = yield* ProjectionTurnRepository;
       const threadId = ThreadId.make("crew-thread");
       const turnId = TurnId.make("crew-turn");
       const crewId = CrewId.make("deep_build");
+      const crewTestFlight = {
+        seatOverrides: [{ instanceId: ProviderInstanceId.make("builder"), model: "gpt-5.6-mini" }],
+      };
 
       yield* turns.replacePendingTurnStart({
         threadId,
         messageId: MessageId.make("crew-message"),
         crewId,
+        crewTestFlight,
         sourceProposedPlanThreadId: null,
         sourceProposedPlanId: null,
         requestedAt: "2026-08-11T13:00:00.000Z",
       });
       const pending = Option.getOrThrow(yield* turns.getPendingTurnStartByThreadId({ threadId }));
       assert.equal(pending.crewId, crewId);
+      assert.deepStrictEqual(pending.crewTestFlight, crewTestFlight);
 
       yield* turns.upsertByTurnId({
         threadId,
         turnId,
         pendingMessageId: pending.messageId,
         crewId: pending.crewId,
+        crewTestFlight: pending.crewTestFlight,
         sourceProposedPlanThreadId: null,
         sourceProposedPlanId: null,
         assistantMessageId: null,
@@ -120,6 +126,10 @@ layer("ProjectionDispatchRepository", (it) => {
       assert.equal(
         Option.getOrThrow(yield* turns.getByTurnId({ threadId, turnId })).crewId,
         crewId,
+      );
+      assert.deepStrictEqual(
+        Option.getOrThrow(yield* turns.getByTurnId({ threadId, turnId })).crewTestFlight,
+        crewTestFlight,
       );
     }),
   );

@@ -1111,6 +1111,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: targetThread.interactionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
           ...(command.crewId !== undefined ? { crewId: command.crewId } : {}),
+          ...(command.crewTestFlight !== undefined
+            ? { crewTestFlight: command.crewTestFlight }
+            : {}),
           createdAt: command.createdAt,
         },
       };

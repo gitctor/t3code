@@ -293,13 +293,16 @@ export const make = Effect.gen(function* () {
     const existing = yield* dispatchRepository
       .listByParentTurn({ parentThreadId: scope.threadId, parentTurnId: planner.turnId })
       .pipe(mapInternalFailure("Dispatch state is unavailable."));
+    const concurrencyLimit = planner.turn.crewTestFlight
+      ? Math.max(DISPATCH_CONCURRENCY_LIMIT, planner.crewEntry.resolvedCrew.crew.members.length)
+      : DISPATCH_CONCURRENCY_LIMIT;
     if (
       existing.filter((dispatch) => !isSettledDispatchStatus(dispatch.status)).length >=
-      DISPATCH_CONCURRENCY_LIMIT
+      concurrencyLimit
     ) {
       return yield* orchestrationError(
         "dispatch-limit-reached",
-        `This turn already has ${DISPATCH_CONCURRENCY_LIMIT} active dispatches.`,
+        `This turn already has ${concurrencyLimit} active dispatches.`,
       );
     }
 
@@ -348,13 +351,18 @@ export const make = Effect.gen(function* () {
       provider.installed &&
       provider.status === "ready" &&
       provider.auth.status !== "unauthenticated";
+    const testFlightSeatOverride = planner.turn.crewTestFlight?.seatOverrides.find(
+      (override) => override.instanceId === input.instanceId,
+    );
     const model =
+      testFlightSeatOverride?.model ??
       input.model ??
       member.model ??
       provider?.models.find((entry) => entry.isDefault)?.slug ??
       provider?.models[0]?.slug;
     const role = input.role ?? member.role;
-    const effort = effortFromOptions(member.options);
+    const memberOptions = planner.turn.crewTestFlight ? undefined : member.options;
+    const effort = effortFromOptions(memberOptions);
     const title = dispatchTitle(
       input.prompt,
       planner.crewEntry.memberDisplayNames.get(input.instanceId) ?? String(input.instanceId),
@@ -387,7 +395,7 @@ export const make = Effect.gen(function* () {
         Effect.map(Option.getOrUndefined),
       );
     const baseBranch = baseThread.branch;
-    if (!project || !baseBranch) {
+    if (!project || (!baseBranch && !planner.turn.crewTestFlight)) {
       const reason = "The parent thread has no current branch for a child worktree.";
       yield* persistDecline({
         dispatchId,
@@ -406,23 +414,33 @@ export const make = Effect.gen(function* () {
     }
 
     const childThreadId = ThreadId.make(yield* randomUuid);
-    const childBranch = `t3code/dispatch-${String(dispatchId).slice(0, 12)}`;
-    const worktree = yield* gitWorkflow
-      .createWorktree({
-        cwd: project.workspaceRoot,
-        refName: baseBranch,
-        newRefName: childBranch,
-        baseRefName: baseBranch,
-        path: null,
-      })
-      .pipe(
-        Effect.mapError(() =>
-          orchestrationError(
-            "instance-unavailable",
-            `A child worktree could not be created from branch '${baseBranch}'.`,
-          ),
-        ),
-      );
+    const childWorkspace = planner.turn.crewTestFlight
+      ? {
+          branch: baseThread.branch,
+          worktreePath: null,
+          createdWorktreePath: null,
+        }
+      : yield* gitWorkflow
+          .createWorktree({
+            cwd: project.workspaceRoot,
+            refName: baseBranch!,
+            newRefName: `t3code/dispatch-${String(dispatchId).slice(0, 12)}`,
+            baseRefName: baseBranch!,
+            path: null,
+          })
+          .pipe(
+            Effect.map((worktree) => ({
+              branch: worktree.worktree.refName,
+              worktreePath: worktree.worktree.path,
+              createdWorktreePath: worktree.worktree.path,
+            })),
+            Effect.mapError(() =>
+              orchestrationError(
+                "instance-unavailable",
+                `A child worktree could not be created from branch '${baseBranch}'.`,
+              ),
+            ),
+          );
 
     const row = {
       dispatchId,
@@ -455,12 +473,12 @@ export const make = Effect.gen(function* () {
         modelSelection: {
           instanceId: input.instanceId,
           model,
-          ...(member.options !== undefined ? { options: member.options } : {}),
+          ...(memberOptions !== undefined ? { options: memberOptions } : {}),
         },
         runtimeMode: planner.thread.runtimeMode,
         interactionMode: "default",
-        branch: worktree.worktree.refName,
-        worktreePath: worktree.worktree.path,
+        branch: childWorkspace.branch,
+        worktreePath: childWorkspace.worktreePath,
         createdAt: startedAt,
       });
       childCreated = true;
@@ -480,7 +498,7 @@ export const make = Effect.gen(function* () {
         modelSelection: {
           instanceId: input.instanceId,
           model,
-          ...(member.options !== undefined ? { options: member.options } : {}),
+          ...(memberOptions !== undefined ? { options: memberOptions } : {}),
         },
         runtimeMode: planner.thread.runtimeMode,
         interactionMode: "default",
@@ -498,11 +516,11 @@ export const make = Effect.gen(function* () {
             yield* persistFailedStart(row, startFailureReason, startedAt).pipe(
               Effect.catch(() => Effect.void),
             );
-          } else if (!childCreated) {
+          } else if (!childCreated && childWorkspace.createdWorktreePath !== null) {
             yield* gitWorkflow
               .removeWorktree({
                 cwd: project.workspaceRoot,
-                path: worktree.worktree.path,
+                path: childWorkspace.createdWorktreePath,
                 force: true,
               })
               .pipe(Effect.catch(() => Effect.void));

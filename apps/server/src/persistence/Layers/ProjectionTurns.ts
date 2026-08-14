@@ -1,4 +1,4 @@
-import { OrchestrationCheckpointFile } from "@t3tools/contracts";
+import { CrewTestFlightTurnInput, OrchestrationCheckpointFile } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
@@ -24,12 +24,20 @@ import {
 const ProjectionTurnDbRowSchema = ProjectionTurn.mapFields(
   Struct.assign({
     checkpointFiles: Schema.fromJsonString(Schema.Array(OrchestrationCheckpointFile)),
+    crewTestFlight: Schema.NullOr(Schema.fromJsonString(CrewTestFlightTurnInput)),
   }),
 );
 
 const ProjectionTurnByIdDbRowSchema = ProjectionTurnById.mapFields(
   Struct.assign({
     checkpointFiles: Schema.fromJsonString(Schema.Array(OrchestrationCheckpointFile)),
+    crewTestFlight: Schema.NullOr(Schema.fromJsonString(CrewTestFlightTurnInput)),
+  }),
+);
+
+const ProjectionPendingTurnStartDbRowSchema = ProjectionPendingTurnStart.mapFields(
+  Struct.assign({
+    crewTestFlight: Schema.NullOr(Schema.fromJsonString(CrewTestFlightTurnInput)),
   }),
 );
 
@@ -52,6 +60,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           turn_id,
           pending_message_id,
           crew_id,
+          crew_test_flight_json,
           source_proposed_plan_thread_id,
           source_proposed_plan_id,
           assistant_message_id,
@@ -69,6 +78,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           ${row.turnId},
           ${row.pendingMessageId},
           ${row.crewId},
+          ${row.crewTestFlight},
           ${row.sourceProposedPlanThreadId},
           ${row.sourceProposedPlanId},
           ${row.assistantMessageId},
@@ -85,6 +95,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
         DO UPDATE SET
           pending_message_id = excluded.pending_message_id,
           crew_id = excluded.crew_id,
+          crew_test_flight_json = excluded.crew_test_flight_json,
           source_proposed_plan_thread_id = excluded.source_proposed_plan_thread_id,
           source_proposed_plan_id = excluded.source_proposed_plan_id,
           assistant_message_id = excluded.assistant_message_id,
@@ -112,7 +123,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
   });
 
   const insertPendingProjectionTurn = SqlSchema.void({
-    Request: ProjectionPendingTurnStart,
+    Request: ProjectionPendingTurnStartDbRowSchema,
     execute: (row) =>
       sql`
         INSERT INTO projection_turns (
@@ -120,6 +131,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           turn_id,
           pending_message_id,
           crew_id,
+          crew_test_flight_json,
           source_proposed_plan_thread_id,
           source_proposed_plan_id,
           assistant_message_id,
@@ -137,6 +149,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           NULL,
           ${row.messageId},
           ${row.crewId},
+          ${row.crewTestFlight},
           ${row.sourceProposedPlanThreadId},
           ${row.sourceProposedPlanId},
           NULL,
@@ -154,13 +167,14 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
 
   const getPendingProjectionTurn = SqlSchema.findOneOption({
     Request: GetProjectionPendingTurnStartInput,
-    Result: ProjectionPendingTurnStart,
+    Result: ProjectionPendingTurnStartDbRowSchema,
     execute: ({ threadId }) =>
       sql`
         SELECT
           thread_id AS "threadId",
           pending_message_id AS "messageId",
           crew_id AS "crewId",
+          crew_test_flight_json AS "crewTestFlight",
           source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           source_proposed_plan_id AS "sourceProposedPlanId",
           requested_at AS "requestedAt"
@@ -185,6 +199,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           turn_id AS "turnId",
           pending_message_id AS "pendingMessageId",
           crew_id AS "crewId",
+          crew_test_flight_json AS "crewTestFlight",
           source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           source_proposed_plan_id AS "sourceProposedPlanId",
           assistant_message_id AS "assistantMessageId",
@@ -219,6 +234,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
           turn_id AS "turnId",
           pending_message_id AS "pendingMessageId",
           crew_id AS "crewId",
+          crew_test_flight_json AS "crewTestFlight",
           source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           source_proposed_plan_id AS "sourceProposedPlanId",
           assistant_message_id AS "assistantMessageId",

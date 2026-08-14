@@ -39,33 +39,36 @@ const dispatch: ProjectionDispatch = {
   settledAt: null,
 };
 
-it("decodes task lifecycle events and folds the projected row in the existing Agents model", () => {
-  const projections = [
-    { kind: "started" as const },
-    {
-      kind: "progress" as const,
-      summary: "Editing the dispatch projection",
-      lastToolName: "apply_patch",
-      status: "running" as const,
-    },
-    { kind: "updated" as const, status: "waiting" as const },
-    {
-      kind: "completed" as const,
-      status: "completed" as const,
-      summary: "Projection implemented",
-    },
-  ];
+const projections = [
+  { kind: "started" as const },
+  {
+    kind: "progress" as const,
+    summary: "Editing the dispatch projection",
+    lastToolName: "apply_patch",
+    status: "running" as const,
+  },
+  { kind: "updated" as const, status: "waiting" as const },
+  {
+    kind: "completed" as const,
+    status: "completed" as const,
+    summary: "Projection implemented",
+  },
+];
 
-  const events = projections.map((projection, index) =>
+const projectLifecycle = (row: ProjectionDispatch, prefix: string) =>
+  projections.map((projection, index) =>
     decodeRuntimeEvent(
       makeDispatchTaskRuntimeEvent({
-        dispatch,
-        eventId: EventId.make(`dispatch-event-${index}`),
+        dispatch: row,
+        eventId: EventId.make(`${prefix}-${index}`),
         createdAt: `2026-08-11T12:00:0${index}.000Z`,
         projection,
       }),
     ),
   );
+
+it("decodes task lifecycle events and folds the projected row in the existing Agents model", () => {
+  const events = projectLifecycle(dispatch, "dispatch-event");
 
   expect(events.map((event) => event.type)).toEqual([
     "task.started",
@@ -104,5 +107,30 @@ it("decodes task lifecycle events and folds the projected row in the existing Ag
     effort: dispatch.effort,
     status: "completed",
     result: "Projection implemented",
+  });
+});
+
+it("projects a test-flight dispatch through the same task rows as a normal dispatch", () => {
+  const testFlightDispatch: ProjectionDispatch = {
+    ...dispatch,
+    dispatchId: DispatchId.make("test-flight-dispatch"),
+    model: "claude-haiku-4-5",
+    title: "Test flight — build",
+  };
+  const normalEvents = projectLifecycle(dispatch, "normal-dispatch-event");
+  const testFlightEvents = projectLifecycle(testFlightDispatch, "test-flight-event");
+
+  expect(testFlightEvents.map((event) => event.type)).toEqual(
+    normalEvents.map((event) => event.type),
+  );
+  const agents = foldSubagentActivities(
+    testFlightEvents.flatMap((event) => runtimeEventToActivities(event, testFlightDispatch.title)),
+  );
+  expect(agents).toHaveLength(1);
+  expect(agents[0]).toMatchObject({
+    id: testFlightDispatch.dispatchId,
+    title: testFlightDispatch.title,
+    model: "claude-haiku-4-5",
+    status: "completed",
   });
 });

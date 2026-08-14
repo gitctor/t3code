@@ -4,6 +4,7 @@ import {
   CrewId,
   DispatchId,
   EnvironmentId,
+  MessageId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -26,6 +27,7 @@ import { CrewRegistry } from "../orchestration/Services/CrewRegistry.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { RuntimeReceiptBusTest } from "../orchestration/Layers/RuntimeReceiptBus.ts";
+import { make as makeDispatchReactor } from "../orchestration/Layers/DispatchReactor.ts";
 import {
   RuntimeReceiptBus,
   type RuntimeReceiptBusShape,
@@ -173,6 +175,7 @@ interface HarnessOptions {
   readonly includeMember?: boolean;
   readonly initialDispatches?: ReadonlyArray<ProjectionDispatch>;
   readonly extraThreads?: ReadonlyArray<OrchestrationThread>;
+  readonly testFlight?: boolean;
 }
 
 const withHarness = <A, E>(
@@ -182,8 +185,10 @@ const withHarness = <A, E>(
     readonly restartedBroker: DispatchBrokerShape;
     readonly commands: OrchestrationCommand[];
     readonly dispatches: Map<DispatchId, ProjectionDispatch>;
+    readonly threads: Map<ThreadId, OrchestrationThread>;
     readonly worktreeBases: string[];
     readonly receiptBus: RuntimeReceiptBusShape;
+    readonly reconcileDispatches: Effect.Effect<void>;
   }) => Effect.Effect<A, E>,
 ) => {
   const commands: OrchestrationCommand[] = [];
@@ -226,7 +231,7 @@ const withHarness = <A, E>(
             dispatch.parentThreadId === requestedThreadId && dispatch.status === "running",
         ),
       ),
-    listUnsettled: Effect.succeed(
+    listUnsettled: Effect.sync(() =>
       [...dispatches.values()].filter((dispatch) => dispatch.status === "running"),
     ),
   });
@@ -260,15 +265,13 @@ const withHarness = <A, E>(
         }
         if (command.type === "thread.create") {
           expect(command.parentThreadId).toBe(parentThreadId);
-          threads.set(
-            command.threadId,
-            thread({
-              id: command.threadId,
-              branch: command.branch ?? "missing-branch",
-              instanceId: command.modelSelection.instanceId,
-              turnId: TurnId.make(`turn-${command.threadId}`),
-            }),
-          );
+          const created = thread({
+            id: command.threadId,
+            branch: command.branch ?? "missing-branch",
+            instanceId: command.modelSelection.instanceId,
+            turnId: TurnId.make(`turn-${command.threadId}`),
+          });
+          threads.set(command.threadId, { ...created, worktreePath: command.worktreePath });
         }
         return { sequence: commands.length };
       }),
@@ -285,6 +288,11 @@ const withHarness = <A, E>(
                 turnId: parentTurnId,
                 pendingMessageId: null,
                 crewId,
+                crewTestFlight: options.testFlight
+                  ? {
+                      seatOverrides: [{ instanceId: childInstanceId, model: "claude-haiku-4-5" }],
+                    }
+                  : null,
                 sourceProposedPlanThreadId: null,
                 sourceProposedPlanId: null,
                 assistantMessageId: null,
@@ -368,14 +376,19 @@ const withHarness = <A, E>(
   return Effect.gen(function* () {
     const broker = yield* make;
     const restartedBroker = yield* make;
+    const dispatchReactor = yield* makeDispatchReactor;
     const receiptBus = yield* RuntimeReceiptBus;
     return yield* test({
       broker,
       restartedBroker,
       commands,
       dispatches,
+      threads,
       worktreeBases,
       receiptBus,
+      reconcileDispatches: Effect.scoped(
+        dispatchReactor.start().pipe(Effect.andThen(dispatchReactor.drain)),
+      ),
     });
   }).pipe(Effect.provide(layers));
 };
@@ -405,6 +418,77 @@ it.effect("accepts a rostered dispatch into an ordinary child thread and worktre
         expect(started.activity.kind).toBe("task.started");
       }
     }),
+  ),
+);
+
+it.effect("runs a test-flight seat on its override without a worktree and settles normally", () =>
+  withHarness(
+    { testFlight: true },
+    ({ broker, commands, dispatches, threads, worktreeBases, reconcileDispatches }) =>
+      Effect.gen(function* () {
+        const accepted = yield* broker.dispatch(scope, {
+          instanceId: childInstanceId,
+          model: "claude-opus-4-1",
+          prompt: 'Reply with exactly "TEST COMPLETE — build".',
+        });
+
+        expect(accepted).toMatchObject({
+          status: "running",
+          model: "claude-haiku-4-5",
+        });
+        expect(worktreeBases).toEqual([]);
+        const childCreate = commands.find((command) => command.type === "thread.create");
+        expect(childCreate).toMatchObject({
+          type: "thread.create",
+          modelSelection: {
+            instanceId: childInstanceId,
+            model: "claude-haiku-4-5",
+          },
+          worktreePath: null,
+        });
+        if (childCreate?.type !== "thread.create") return;
+        expect(childCreate.modelSelection.options).toBeUndefined();
+
+        const child = threads.get(childCreate.threadId);
+        expect(child?.latestTurn).not.toBeNull();
+        if (!child?.latestTurn) return;
+        threads.set(child.id, {
+          ...child,
+          latestTurn: {
+            ...child.latestTurn,
+            state: "completed",
+            completedAt: now,
+          },
+          messages: [
+            {
+              id: MessageId.make("test-flight-reply"),
+              role: "assistant",
+              text: "TEST COMPLETE — build",
+              attachments: [],
+              turnId: child.latestTurn.turnId,
+              streaming: false,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+          session: child.session
+            ? { ...child.session, status: "ready", activeTurnId: null, updatedAt: now }
+            : null,
+        });
+
+        yield* reconcileDispatches;
+
+        expect(dispatches.get(accepted.dispatchId)).toMatchObject({
+          status: "completed",
+          model: "claude-haiku-4-5",
+          summary: "TEST COMPLETE — build",
+        });
+        const completed = commands.find(
+          (command) =>
+            command.type === "thread.activity.append" && command.activity.kind === "task.completed",
+        );
+        expect(completed).toBeDefined();
+      }),
   ),
 );
 

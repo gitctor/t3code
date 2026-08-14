@@ -27,6 +27,7 @@ export const RPC_REQUIRED_SCOPES = {
   [SUGGESTIONS_WS_METHODS.dismiss]: AuthOrchestrationOperateScope,
   [SUGGESTIONS_WS_METHODS.restore]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_WS_METHODS.startCrewTestFlight]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: AuthOrchestrationReadScope,
