@@ -8,6 +8,7 @@ import {
   ProviderDriverKind,
   type OrchestrationEvent,
   type OrchestrationThread,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -55,7 +56,7 @@ import * as ThreadBackgroundLiveness from "../src/orchestration/ThreadBackground
 import * as ThreadPlanProgress from "../src/orchestration/ThreadPlanProgress.ts";
 import { RuntimeReceiptBusTest } from "../src/orchestration/Layers/RuntimeReceiptBus.ts";
 import { OrchestrationReactorLive } from "../src/orchestration/Layers/OrchestrationReactor.ts";
-import { ProviderCommandReactorLive } from "../src/orchestration/Layers/ProviderCommandReactor.ts";
+import { CrewProviderCommandLayerLive } from "../src/server.ts";
 import { ProviderRuntimeIngestionLive } from "../src/orchestration/Layers/ProviderRuntimeIngestion.ts";
 import { CheckpointReactor } from "../src/orchestration/Services/CheckpointReactor.ts";
 import { DispatchReactor } from "../src/orchestration/Services/DispatchReactor.ts";
@@ -186,6 +187,7 @@ export interface OrchestrationIntegrationHarness {
   readonly engine: OrchestrationEngineShape;
   readonly snapshotQuery: ProjectionSnapshotQuery["Service"];
   readonly providerService: ProviderService["Service"];
+  readonly serverSettings: ServerSettingsService["Service"];
   readonly checkpointStore: CheckpointStore.CheckpointStore["Service"];
   readonly checkpointRepository: ProjectionCheckpointRepository["Service"];
   readonly pendingApprovalRepository: ProjectionPendingApprovalRepository["Service"];
@@ -232,6 +234,8 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  readonly providerSnapshots?: ReadonlyArray<ServerProvider>;
+  readonly serverSettings?: Parameters<typeof ServerSettingsService.layerTest>[0];
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -302,7 +306,7 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         );
-    const providerRegistryLayer = makeProviderRegistryLayer();
+    const providerRegistryLayer = makeProviderRegistryLayer(options?.providerSnapshots);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
     const projectionSnapshotQueryLayer = OrchestrationProjectionSnapshotQueryLive;
@@ -318,7 +322,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(ThreadBackgroundLiveness.layer),
       Layer.provideMerge(ThreadPlanProgress.layer),
     );
-    const serverSettingsLayer = ServerSettingsService.layerTest();
+    const serverSettingsLayer = ServerSettingsService.layerTest(options?.serverSettings);
     const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(AccountLimitsService.layerTest),
@@ -335,7 +339,7 @@ export const makeOrchestrationIntegrationHarness = (
       generateBranchName: () => Effect.succeed({ branch: "update" }),
       generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
     } as unknown as TextGenerationShape);
-    const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
+    const providerCommandReactorLayer = CrewProviderCommandLayerLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitWorkflowLayer),
       Layer.provideMerge(textGenerationLayer),
@@ -403,7 +407,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(providerRegistryLayer),
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolver.layer),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(serverSettingsLayer),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -427,6 +431,9 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
     const providerService = yield* tryRuntimePromise("load ProviderService service", () =>
       runtime.runPromise(Effect.service(ProviderService)),
+    ).pipe(Effect.orDie);
+    const serverSettings = yield* tryRuntimePromise("load ServerSettingsService", () =>
+      runtime.runPromise(Effect.service(ServerSettingsService)),
     ).pipe(Effect.orDie);
     const checkpointStore = yield* tryRuntimePromise("load CheckpointStore service", () =>
       runtime.runPromise(Effect.service(CheckpointStore.CheckpointStore)),
@@ -579,6 +586,7 @@ export const makeOrchestrationIntegrationHarness = (
       engine,
       snapshotQuery,
       providerService,
+      serverSettings,
       checkpointStore,
       checkpointRepository,
       pendingApprovalRepository,

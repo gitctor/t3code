@@ -34,54 +34,60 @@ export const make = (entries: ReadonlyArray<CrewRegistryEntry> = []): CrewRegist
     resolve: Effect.fn("CrewRegistry.resolve")(function* (crewId) {
       return entriesById.get(crewId);
     }),
+    listCrewIds: Effect.succeed(Array.from(entriesById.keys())),
   };
 };
 
 export const makeHydrated = (input: {
   readonly getCrews: Effect.Effect<ReadonlyArray<CrewRegistryEntry["resolvedCrew"]["crew"]>>;
   readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
-}): CrewRegistryShape => ({
-  resolve: Effect.fn("CrewRegistry.resolve")(function* (crewId) {
-    const [crews, providers] = yield* Effect.all([input.getCrews, input.getProviders]);
-    const crew = crews.find((candidate) => candidate.id === crewId);
-    if (!crew) return undefined;
+}): CrewRegistryShape => {
+  const listCrewIds = input.getCrews.pipe(Effect.map((crews) => crews.map((crew) => crew.id)));
 
-    const providersById = new Map<ProviderInstanceId, ServerProvider>(
-      providers.map((provider) => [provider.instanceId, provider]),
-    );
-    const planner = providersById.get(crew.planner.instanceId);
-    const plannerAvailable = planner !== undefined && isReady(planner);
-    const availableMemberIds = crew.members
-      .map((member) => member.instanceId)
-      .filter((instanceId) => {
-        const provider = providersById.get(instanceId);
-        return provider !== undefined && isReady(provider);
-      });
-    const memberDisplayNames = new Map<ProviderInstanceId, string>();
-    for (const member of crew.members) {
-      const provider = providersById.get(member.instanceId);
-      if (provider) memberDisplayNames.set(member.instanceId, displayName(provider));
-    }
+  return {
+    resolve: Effect.fn("CrewRegistry.resolve")(function* (crewId) {
+      const [crews, providers] = yield* Effect.all([input.getCrews, input.getProviders]);
+      const crew = crews.find((candidate) => candidate.id === crewId);
+      if (!crew) return undefined;
 
-    const unavailableReason = !planner
-      ? "planner-instance-missing"
-      : !plannerAvailable
-        ? "planner-instance-unavailable"
-        : availableMemberIds.length === 0
-          ? "no-available-members"
-          : undefined;
+      const providersById = new Map<ProviderInstanceId, ServerProvider>(
+        providers.map((provider) => [provider.instanceId, provider]),
+      );
+      const planner = providersById.get(crew.planner.instanceId);
+      const plannerAvailable = planner !== undefined && isReady(planner);
+      const availableMemberIds = crew.members
+        .map((member) => member.instanceId)
+        .filter((instanceId) => {
+          const provider = providersById.get(instanceId);
+          return provider !== undefined && isReady(provider);
+        });
+      const memberDisplayNames = new Map<ProviderInstanceId, string>();
+      for (const member of crew.members) {
+        const provider = providersById.get(member.instanceId);
+        if (provider) memberDisplayNames.set(member.instanceId, displayName(provider));
+      }
 
-    return {
-      resolvedCrew: {
-        crew,
-        plannerAvailable,
-        availableMemberIds,
-        ...(unavailableReason ? { unavailableReason } : {}),
-      },
-      memberDisplayNames,
-    };
-  }),
-});
+      const unavailableReason = !planner
+        ? "planner-instance-missing"
+        : !plannerAvailable
+          ? "planner-instance-unavailable"
+          : availableMemberIds.length === 0
+            ? "no-available-members"
+            : undefined;
+
+      return {
+        resolvedCrew: {
+          crew,
+          plannerAvailable,
+          availableMemberIds,
+          ...(unavailableReason ? { unavailableReason } : {}),
+        },
+        memberDisplayNames,
+      };
+    }),
+    listCrewIds,
+  };
+};
 
 export const CrewRegistryLive = Layer.effect(
   CrewRegistry,

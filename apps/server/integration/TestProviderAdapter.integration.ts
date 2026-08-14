@@ -3,6 +3,7 @@ import {
   EventId,
   ProviderApprovalDecision,
   ProviderRuntimeEvent,
+  type ProviderSendTurnInput,
   RuntimeSessionId,
   ProviderSession,
   ProviderTurnStartResult,
@@ -55,6 +56,7 @@ interface SessionState {
   turnCount: number;
   readonly queuedResponses: Array<TestTurnResponse>;
   readonly rollbackCalls: Array<number>;
+  readonly turnInputs: Array<ProviderSendTurnInput>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,6 +191,7 @@ export interface TestProviderAdapterHarness {
   readonly getStartCount: () => number;
   readonly getRollbackCalls: (threadId: ThreadId) => ReadonlyArray<number>;
   readonly getInterruptCalls: (threadId: ThreadId) => ReadonlyArray<TurnId | undefined>;
+  readonly getTurnInputs: (threadId: ThreadId) => ReadonlyArray<ProviderSendTurnInput>;
   readonly listActiveSessionIds: () => ReadonlyArray<ThreadId>;
   readonly getApprovalResponses: (threadId: ThreadId) => ReadonlyArray<{
     readonly threadId: ThreadId;
@@ -283,6 +286,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
           turnCount: 0,
           queuedResponses: queuedResponsesForNextSession.splice(0),
           rollbackCalls: [],
+          turnInputs: [],
         });
 
         return session;
@@ -296,6 +300,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
         }
 
         state.turnCount += 1;
+        state.turnInputs.push(input);
         const turnCount = state.turnCount;
         const turnId = TurnId.make(`turn-${turnCount}`);
 
@@ -537,6 +542,11 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       return [...calls];
     };
 
+    const getTurnInputs = (threadId: ThreadId): ReadonlyArray<ProviderSendTurnInput> => {
+      const state = sessions.get(threadId);
+      return state ? [...state.turnInputs] : [];
+    };
+
     const listActiveSessionIds = (): ReadonlyArray<ThreadId> =>
       Array.from(sessions.values(), (state) => state.session.threadId);
 
@@ -562,6 +572,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       getStartCount,
       getRollbackCalls,
       getInterruptCalls,
+      getTurnInputs,
       listActiveSessionIds,
       getApprovalResponses,
     } satisfies TestProviderAdapterHarness;

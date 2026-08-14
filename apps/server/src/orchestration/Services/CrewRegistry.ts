@@ -9,15 +9,9 @@ export interface CrewRegistryEntry {
 
 export interface CrewRegistryShape {
   readonly resolve: (crewId: CrewId) => Effect.Effect<CrewRegistryEntry | undefined>;
+  readonly listCrewIds: Effect.Effect<ReadonlyArray<CrewId>>;
 }
 
-export const CrewRegistry = Context.Reference<CrewRegistryShape>(
+export class CrewRegistry extends Context.Service<CrewRegistry, CrewRegistryShape>()(
   "t3/orchestration/Services/CrewRegistry",
-  {
-    defaultValue: (): CrewRegistryShape => ({
-      resolve: Effect.fn("CrewRegistry.resolveEmpty")(function* () {
-        return undefined;
-      }),
-    }),
-  },
-);
+) {}

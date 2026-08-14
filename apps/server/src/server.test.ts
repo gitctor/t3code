@@ -9,6 +9,7 @@ import {
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
   CommandId,
+  type Crew,
   CrewId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -46,7 +47,7 @@ import {
 } from "@t3tools/shared/dpop";
 import { RELAY_HEALTH_REQUEST_TYP, RELAY_MINT_REQUEST_TYP } from "@t3tools/shared/relayJwt";
 import * as RelayClient from "@t3tools/shared/relayClient";
-import { assert, it } from "@effect/vitest";
+import { assert, it, it as effectIt } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -117,6 +118,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { CrewRegistryLive } from "./orchestration/Layers/CrewRegistry.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProjectionTaskSuggestions from "./persistence/Services/ProjectionTaskSuggestions.ts";
@@ -162,6 +164,7 @@ import * as AccountLimitsService from "./usage/AccountLimitsService.ts";
 import * as Data from "effect/Data";
 
 import { makeOrchestrationIntegrationHarness } from "../integration/OrchestrationEngineHarness.integration.ts";
+import type { TestTurnResponse } from "../integration/TestProviderAdapter.integration.ts";
 import {
   countingWsRpcProtocolLayer,
   makeCountingWsRpcClient,
@@ -619,6 +622,30 @@ const buildAppUnderTest = (options?: {
     const serviceLauncherClientLayer = ServiceLauncherClient.layer.pipe(
       Layer.provide(Layer.succeed(HostProcessEnvironment, {})),
     );
+    const providerRegistryLayer = Layer.mock(ProviderRegistry.ProviderRegistry)({
+      getProviders: Effect.succeed([]),
+      refresh: () => Effect.succeed([]),
+      refreshInstance: () => Effect.succeed([]),
+      getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
+        Effect.succeed(
+          makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null }),
+        ),
+      setProviderMaintenanceActionState: () => Effect.succeed([]),
+      streamChanges: Stream.empty,
+      ...options?.layers?.providerRegistry,
+    });
+    const serverSettingsLayer = Layer.mock(ServerSettings.ServerSettingsService)({
+      start: Effect.void,
+      ready: Effect.void,
+      getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+      updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+      streamChanges: Stream.empty,
+      ...options?.layers?.serverSettings,
+    });
+    const crewRegistryLayer = CrewRegistryLive.pipe(
+      Layer.provide(providerRegistryLayer),
+      Layer.provide(serverSettingsLayer),
+    );
 
     const servedRoutesLayerBase = HttpRouter.serve(
       makeRoutesLayer.pipe(Layer.provide(serviceLauncherClientLayer)),
@@ -630,6 +657,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mergeAll(
           DispatchBroker.unavailableLayer,
+          crewRegistryLayer,
           Layer.mock(Keybindings.Keybindings)({
             loadConfigState: Effect.succeed({
               keybindings: [],
@@ -640,30 +668,8 @@ const buildAppUnderTest = (options?: {
           }),
         ),
       ),
-      Layer.provide(
-        Layer.mock(ProviderRegistry.ProviderRegistry)({
-          getProviders: Effect.succeed([]),
-          refresh: () => Effect.succeed([]),
-          refreshInstance: () => Effect.succeed([]),
-          getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
-            Effect.succeed(
-              makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null }),
-            ),
-          setProviderMaintenanceActionState: () => Effect.succeed([]),
-          streamChanges: Stream.empty,
-          ...options?.layers?.providerRegistry,
-        }),
-      ),
-      Layer.provide(
-        Layer.mock(ServerSettings.ServerSettingsService)({
-          start: Effect.void,
-          ready: Effect.void,
-          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          streamChanges: Stream.empty,
-          ...options?.layers?.serverSettings,
-        }),
-      ),
+      Layer.provide(providerRegistryLayer),
+      Layer.provide(serverSettingsLayer),
       Layer.provide(
         Layer.mock(ExternalLauncher.ExternalLauncher)({
           resolveAvailableEditors: () => Effect.succeed([]),
@@ -6030,6 +6036,188 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  effectIt.live(
+    "uses the live server crew registry for boot crews and crews created immediately before a turn",
+    () =>
+      Effect.gen(function* () {
+        const now = "2026-08-14T12:00:00.000Z";
+        const instanceId = ProviderInstanceId.make("codex");
+        const bootCrew = {
+          id: CrewId.make("boot_crew"),
+          name: "Boot Crew",
+          planner: { instanceId, model: "gpt-5-codex" },
+          members: [{ instanceId, role: "build" }],
+        } satisfies Crew;
+        const freshCrew = {
+          ...bootCrew,
+          id: CrewId.make("fresh_crew"),
+          name: "Fresh Crew",
+        } satisfies Crew;
+        const readyProvider: ServerProvider = {
+          instanceId,
+          driver: ProviderDriverKind.make("codex"),
+          displayName: "Codex",
+          enabled: true,
+          installed: true,
+          version: "1.0.0",
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: now,
+          availability: "available",
+          models: [],
+          slashCommands: [],
+          skills: [],
+        };
+        const turnResponse = (index: number): TestTurnResponse => ({
+          events: [
+            {
+              type: "turn.started",
+              eventId: EventId.make(`crew-registry-turn-started-${index}`),
+              provider: ProviderDriverKind.make("codex"),
+              createdAt: now,
+              threadId: defaultThreadId,
+              turnId: `fixture-turn-${index}`,
+            },
+            {
+              type: "turn.completed",
+              eventId: EventId.make(`crew-registry-turn-completed-${index}`),
+              provider: ProviderDriverKind.make("codex"),
+              createdAt: now,
+              threadId: defaultThreadId,
+              turnId: `fixture-turn-${index}`,
+              status: "completed",
+            },
+          ],
+        });
+
+        yield* Effect.acquireUseRelease(
+          makeOrchestrationIntegrationHarness({
+            provider: ProviderDriverKind.make("codex"),
+            providerSnapshots: [readyProvider],
+            serverSettings: { crews: [bootCrew] },
+          }),
+          (harness) =>
+            Effect.gen(function* () {
+              yield* harness.engine.dispatch({
+                type: "project.create",
+                commandId: CommandId.make("crew-registry-project-create"),
+                projectId: defaultProjectId,
+                title: "Crew Registry Project",
+                workspaceRoot: harness.workspaceDir,
+                defaultModelSelection,
+                createdAt: now,
+              });
+              yield* harness.engine.dispatch({
+                type: "thread.create",
+                commandId: CommandId.make("crew-registry-thread-create"),
+                threadId: defaultThreadId,
+                projectId: defaultProjectId,
+                title: "Crew Registry Thread",
+                modelSelection: defaultModelSelection,
+                interactionMode: "default",
+                runtimeMode: "approval-required",
+                branch: "main",
+                worktreePath: harness.workspaceDir,
+                createdAt: now,
+              });
+
+              yield* buildAppUnderTest({
+                layers: {
+                  orchestrationEngine: harness.engine,
+                  projectionSnapshotQuery: harness.snapshotQuery,
+                  providerRegistry: { getProviders: Effect.succeed([readyProvider]) },
+                  serverSettings: harness.serverSettings,
+                },
+              });
+              const wsUrl = yield* getWsServerUrl("/ws");
+
+              yield* harness.adapterHarness!.queueTurnResponseForNextSession(turnResponse(1));
+              yield* Effect.scoped(
+                withWsRpcClient(wsUrl, (client) =>
+                  client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+                    type: "thread.turn.start",
+                    commandId: CommandId.make("crew-registry-boot-turn"),
+                    threadId: defaultThreadId,
+                    message: {
+                      messageId: MessageId.make("crew-registry-boot-message"),
+                      role: "user",
+                      text: "Use the boot crew.",
+                      attachments: [],
+                    },
+                    crewId: bootCrew.id,
+                    modelSelection: defaultModelSelection,
+                    interactionMode: "default",
+                    runtimeMode: "approval-required",
+                    createdAt: now,
+                  }),
+                ),
+              );
+              yield* harness.waitForReceipt(
+                (receipt) =>
+                  receipt.type === "turn.processing.quiesced" &&
+                  receipt.threadId === defaultThreadId &&
+                  receipt.checkpointTurnCount === 1,
+              );
+
+              const bootTurn = harness.adapterHarness!.getTurnInputs(defaultThreadId)[0];
+              assert.equal(bootTurn?.crewId, bootCrew.id);
+              assert.include(bootTurn?.additionalInstructions ?? "", "Crew: Boot Crew (boot_crew)");
+
+              yield* harness.adapterHarness!.queueTurnResponse(defaultThreadId, turnResponse(2));
+              yield* Effect.scoped(
+                withWsRpcClient(wsUrl, (client) =>
+                  Effect.gen(function* () {
+                    yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+                      type: "crew.create",
+                      commandId: CommandId.make("crew-registry-create-fresh"),
+                      crew: freshCrew,
+                      createdAt: now,
+                    });
+                    yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+                      type: "thread.turn.start",
+                      commandId: CommandId.make("crew-registry-fresh-turn"),
+                      threadId: defaultThreadId,
+                      message: {
+                        messageId: MessageId.make("crew-registry-fresh-message"),
+                        role: "user",
+                        text: "Use the fresh crew immediately.",
+                        attachments: [],
+                      },
+                      crewId: freshCrew.id,
+                      modelSelection: defaultModelSelection,
+                      interactionMode: "default",
+                      runtimeMode: "approval-required",
+                      createdAt: now,
+                    });
+                  }),
+                ),
+              );
+              yield* harness.waitForReceipt(
+                (receipt) =>
+                  receipt.type === "turn.processing.quiesced" &&
+                  receipt.threadId === defaultThreadId &&
+                  receipt.checkpointTurnCount === 2,
+              );
+
+              assert.deepEqual(
+                (yield* harness.serverSettings.getSettings).crews.map((crew) => crew.id),
+                [bootCrew.id, freshCrew.id],
+              );
+              const freshTurn = harness.adapterHarness!.getTurnInputs(defaultThreadId)[1];
+              assert.equal(freshTurn?.crewId, freshCrew.id);
+              assert.include(
+                freshTurn?.additionalInstructions ?? "",
+                "Crew: Fresh Crew (fresh_crew)",
+              );
+            }),
+          (harness) => harness.dispose,
+        );
+      }).pipe(
+        Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
+      ),
+    120_000,
   );
 
   it.effect("routes websocket rpc orchestration shell snapshot errors", () =>

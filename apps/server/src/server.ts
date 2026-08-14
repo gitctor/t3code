@@ -248,11 +248,15 @@ const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
+export const CrewProviderCommandLayerLive = Layer.merge(
+  CrewRegistryLive,
+  ProviderCommandReactorLive.pipe(Layer.provide(CrewRegistryLive)),
+);
+
 const ReactorLayerLive = Layer.empty.pipe(
-  Layer.provideMerge(CrewRegistryLive),
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
-  Layer.provideMerge(ProviderCommandReactorLive),
+  Layer.provideMerge(CrewProviderCommandLayerLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(DispatchReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),

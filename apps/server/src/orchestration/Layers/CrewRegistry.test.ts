@@ -28,7 +28,9 @@ const resolvedCrew: ResolvedCrew = {
 
 it.effect("starts empty and resolves unknown crew ids without failing", () =>
   Effect.gen(function* () {
-    expect(yield* make().resolve(crewId)).toBeUndefined();
+    const registry = make();
+    expect(yield* registry.resolve(crewId)).toBeUndefined();
+    expect(yield* registry.listCrewIds).toEqual([]);
   }),
 );
 
@@ -38,7 +40,9 @@ it.effect("resolves an in-memory crew entry", () =>
       resolvedCrew,
       memberDisplayNames: new Map([[instanceId, "Codex"]]),
     };
-    expect(yield* make([entry]).resolve(crewId)).toBe(entry);
+    const registry = make([entry]);
+    expect(yield* registry.resolve(crewId)).toBe(entry);
+    expect(yield* registry.listCrewIds).toEqual([crewId]);
   }),
 );
 

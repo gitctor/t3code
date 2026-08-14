@@ -584,7 +584,20 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("continues without crew tools and publishes a warning for an unknown crew", async () => {
-    const harness = await createHarness();
+    const knownCrewId = CrewId.make("deep_build");
+    const codex = ProviderInstanceId.make("codex");
+    const harness = await createHarness({
+      resolvedCrew: {
+        crew: {
+          id: knownCrewId,
+          name: "Deep Build",
+          planner: { instanceId: codex, model: "gpt-5-codex" },
+          members: [{ instanceId: codex, role: "build" }],
+        },
+        plannerAvailable: true,
+        availableMemberIds: [codex],
+      },
+    });
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -613,6 +626,11 @@ describe("ProviderCommandReactor", () => {
         threadId: ThreadId.make("thread-1"),
         providerInstanceId: ProviderInstanceId.make("codex"),
         message: "Crew 'missing_crew' is unavailable. Continuing without crew tools.",
+        detail: {
+          crewId: CrewId.make("missing_crew"),
+          reason: "crew-not-found",
+          knownCrewIds: [knownCrewId],
+        },
       }),
     ]);
   });

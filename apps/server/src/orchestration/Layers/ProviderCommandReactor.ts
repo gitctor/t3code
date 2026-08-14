@@ -833,6 +833,7 @@ const make = Effect.gen(function* () {
     }
     const entry = yield* crewRegistry.resolve(input.crewId);
     if (entry === undefined || !isRunnableCrew(entry.resolvedCrew)) {
+      const knownCrewIds = yield* crewRegistry.listCrewIds;
       yield* providerService.publishRuntimeWarning({
         threadId: input.threadId,
         providerInstanceId: input.providerInstanceId,
@@ -840,6 +841,7 @@ const make = Effect.gen(function* () {
         detail: {
           crewId: input.crewId,
           reason: entry?.resolvedCrew.unavailableReason ?? "crew-not-found",
+          knownCrewIds,
         },
       });
       return undefined;

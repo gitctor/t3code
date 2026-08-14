@@ -317,6 +317,7 @@ const withHarness = <A, E>(
     Layer.succeed(
       CrewRegistry,
       CrewRegistry.of({
+        listCrewIds: Effect.succeed([crewId]),
         resolve: (requestedCrewId) =>
           Effect.succeed(
             requestedCrewId === crewId
