@@ -61,6 +61,16 @@ const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
   private readonly now = "2026-01-01T00:00:00.000Z";
+  public readonly readAccountLimits = Effect.succeed({
+    rateLimits: {
+      limitId: "codex",
+      limitName: null,
+      primary: null,
+      secondary: null,
+      credits: null,
+      planType: null,
+    },
+  });
 
   public readonly startImpl = vi.fn(() =>
     Promise.resolve({

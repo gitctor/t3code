@@ -4,10 +4,10 @@
  * Fed passively: runtime ingestion forwards every
  * `account.rate-limits.updated` event here (Claude usage snapshots and
  * single-window events, Codex app-server notifications), so the cache costs
- * nothing while sessions run. When asked and Codex has no live snapshot, the
- * newest transcript snapshot is recovered from disk. Claude has no disk
- * fallback: its limits exist only on the live stream, which is why snapshots
- * are persisted across restarts.
+ * nothing while sessions run. At startup it recovers canonical limit events
+ * from T3's rotating provider logs, then uses Codex's own session transcripts
+ * as an extra fallback. Reads also ask live adapters for a fresh snapshot when
+ * their protocol supports it.
  *
  * One snapshot per provider: T3 Code drives one account per provider today.
  *
@@ -40,10 +40,13 @@ import {
   isPrimaryCodexLimit,
   sortWindows,
 } from "./accountLimitsNormalize.ts";
-import { readLatestCodexRateLimits } from "./accountLimitsTranscripts.ts";
+import {
+  readLatestCodexRateLimits,
+  readLatestLoggedAccountLimits,
+} from "./accountLimitsTranscripts.ts";
 
-/** Failed or empty transcript scans are not retried more often than this. */
-const CODEX_SEED_MIN_INTERVAL_MS = 60_000;
+/** Failed or empty history scans are not retried more often than this. */
+const HISTORY_SEED_MIN_INTERVAL_MS = 60_000;
 
 /** On-disk shape of the snapshot cache: the contract array, JSON-encoded. */
 const LimitsCacheFile = Schema.Array(AccountLimitsSnapshot);
@@ -62,11 +65,24 @@ export interface AccountLimitsIngestInput {
   readonly createdAt: string;
 }
 
+/** Mutable hook that keeps the cache independent from provider-layer wiring. */
+export function makeAccountLimitsLiveRefreshTrigger() {
+  let current: () => Effect.Effect<void> = () => Effect.void;
+  return {
+    register(refresh: () => Effect.Effect<void>) {
+      current = refresh;
+    },
+    run: () => current(),
+  } as const;
+}
+
 export class AccountLimitsService extends Context.Service<
   AccountLimitsService,
   {
     readonly readSummary: () => Effect.Effect<AccountLimitsSummary>;
     readonly ingest: (input: AccountLimitsIngestInput) => Effect.Effect<void>;
+    /** Runtime ingestion installs the live-adapter pull without a layer cycle. */
+    readonly registerLiveRefresh?: (refresh: () => Effect.Effect<void>) => Effect.Effect<void>;
   }
 >()("t3/usage/AccountLimitsService") {}
 
@@ -98,7 +114,8 @@ export const make = Effect.gen(function* () {
 
   const snapshots = new Map<UsageProviderKind, AccountLimitsSnapshot>();
   const cachePath = path.join(config.stateDir, "account-limits.json");
-  let lastCodexSeedAttemptAtMs = 0;
+  let lastHistorySeedAttemptAtMs = Number.NEGATIVE_INFINITY;
+  const liveRefresh = makeAccountLimitsLiveRefreshTrigger();
 
   // Restarts must not lose the Claude snapshot (stream-only, no disk source),
   // so the cache is persisted. Same Effect.cached trick as the usage scan
@@ -150,6 +167,7 @@ export const make = Effect.gen(function* () {
   const ingestClaude = Effect.fn("AccountLimitsService.ingestClaude")(function* (
     payload: unknown,
     createdAt: string,
+    source: AccountLimitsSnapshot["source"],
   ) {
     const previous = snapshots.get("claude");
     const full = claudeUsageSnapshotFromUnknown(payload);
@@ -162,7 +180,7 @@ export const make = Effect.gen(function* () {
         plan: full.plan ?? previous?.plan ?? null,
         windows: full.windows,
         asOf: createdAt,
-        source: "live",
+        source,
       });
       return;
     }
@@ -179,13 +197,14 @@ export const make = Effect.gen(function* () {
       plan: previous?.plan ?? null,
       windows,
       asOf: createdAt,
-      source: "live",
+      source,
     });
   });
 
   const ingestCodex = Effect.fn("AccountLimitsService.ingestCodex")(function* (
     payload: unknown,
     createdAt: string,
+    source: AccountLimitsSnapshot["source"],
   ) {
     const snapshot = codexSnapshotFromUnknown(payload);
     if (snapshot === null) return;
@@ -198,12 +217,13 @@ export const make = Effect.gen(function* () {
       plan: snapshot.plan ?? previous?.plan ?? null,
       windows: snapshot.windows,
       asOf: createdAt,
-      source: "live",
+      source,
     });
   });
 
-  const ingest = Effect.fn("AccountLimitsService.ingest")(function* (
+  const ingestWithSource = Effect.fn("AccountLimitsService.ingestWithSource")(function* (
     input: AccountLimitsIngestInput,
+    source: AccountLimitsSnapshot["source"],
   ) {
     const provider = providerFromDriver(input.provider);
     if (provider === null) return;
@@ -215,24 +235,34 @@ export const make = Effect.gen(function* () {
         const existing = snapshots.get(provider);
         if (existing !== undefined && input.createdAt < existing.asOf) return;
         if (provider === "claude") {
-          yield* ingestClaude(input.payload, input.createdAt);
+          yield* ingestClaude(input.payload, input.createdAt, source);
         } else {
-          yield* ingestCodex(input.payload, input.createdAt);
+          yield* ingestCodex(input.payload, input.createdAt, source);
         }
       }),
     );
   });
+
+  const ingest = (input: AccountLimitsIngestInput) => ingestWithSource(input, "live");
 
   /**
    * Recovers the Codex snapshot from session transcripts when they are newer
    * than what the cache holds - which covers both a cold cache and Codex
    * sessions driven outside T3 Code.
    */
-  const maybeSeedCodexFromTranscripts = Effect.fn("AccountLimitsService.seedCodex")(function* (
+  const maybeSeedFromHistory = Effect.fn("AccountLimitsService.seedHistory")(function* (
     nowMs: number,
   ) {
-    if (nowMs - lastCodexSeedAttemptAtMs < CODEX_SEED_MIN_INTERVAL_MS) return;
-    lastCodexSeedAttemptAtMs = nowMs;
+    if (nowMs - lastHistorySeedAttemptAtMs < HISTORY_SEED_MIN_INTERVAL_MS) return;
+    lastHistorySeedAttemptAtMs = nowMs;
+
+    const logged = yield* Effect.promise(() =>
+      readLatestLoggedAccountLimits(config.providerEventLogPath, nowMs),
+    );
+    yield* Effect.forEach(logged, (record) => ingestWithSource(record, "transcript"), {
+      concurrency: 1,
+      discard: true,
+    });
 
     const settings = yield* settingsService.getSettings.pipe(
       Effect.catchCause(() => Effect.succeed(null)),
@@ -266,16 +296,29 @@ export const make = Effect.gen(function* () {
 
   const readSummary = Effect.fn("AccountLimitsService.readSummary")(function* () {
     yield* ensureLoaded;
-    const nowMs = yield* Clock.currentTimeMillis;
-    yield* maybeSeedCodexFromTranscripts(nowMs).pipe(Effect.catchCause(() => Effect.void));
+    const seedNowMs = yield* Clock.currentTimeMillis;
+    yield* maybeSeedFromHistory(seedNowMs).pipe(Effect.catchCause(() => Effect.void));
+    yield* liveRefresh.run().pipe(Effect.catchCause(() => Effect.void));
+    const readAtMs = yield* Clock.currentTimeMillis;
     return {
       contractVersion: ACCOUNT_LIMITS_CONTRACT_VERSION,
-      readAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+      readAt: DateTime.formatIso(DateTime.makeUnsafe(readAtMs)),
       snapshots: [...snapshots.values()].sort((a, b) => a.provider.localeCompare(b.provider)),
     } satisfies AccountLimitsSummary;
   });
 
-  return { readSummary, ingest } as const;
+  // Seed during layer construction so the first connected client receives
+  // historical limits without needing to open Usage first.
+  yield* ensureLoaded;
+  const startupNowMs = yield* Clock.currentTimeMillis;
+  yield* maybeSeedFromHistory(startupNowMs).pipe(Effect.catchCause(() => Effect.void));
+
+  const registerLiveRefresh = (refresh: () => Effect.Effect<void>) =>
+    Effect.sync(() => {
+      liveRefresh.register(refresh);
+    });
+
+  return { readSummary, ingest, registerLiveRefresh } as const;
 });
 
 export const layer = Layer.effect(AccountLimitsService, make);

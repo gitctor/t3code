@@ -108,6 +108,8 @@ const PROVIDER = ProviderDriverKind.make("claudeAgent");
  * start often enough that fetching on every init would hammer it.
  */
 const ACCOUNT_USAGE_MIN_INTERVAL_MS = 3 * 60_000;
+/** Interaction refreshes may be frequent, but are still coalesced across cards. */
+const ACCOUNT_USAGE_INTERACTION_MIN_INTERVAL_MS = 5_000;
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
 type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
@@ -3437,15 +3439,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
    * names the single window currently binding, and Claude limits never reach
    * disk, so this pull is the only source that shows every window at once.
    */
-  const emitAccountUsageSnapshot = Effect.fn("emitAccountUsageSnapshot")(function* (
+  const readAccountUsageSnapshot = Effect.fn("readAccountUsageSnapshot")(function* (
     context: ClaudeSessionContext,
+    minimumIntervalMs: number,
   ) {
-    if (!context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) return;
+    if (!context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET) return null;
     const now = yield* Clock.currentTimeMillis;
     const elapsed = now - lastAccountUsageFetchAtMs;
     // A negative elapsed means the wall clock stepped backwards; treat it as
     // expired rather than freezing refreshes until the clock catches up.
-    if (elapsed >= 0 && elapsed < ACCOUNT_USAGE_MIN_INTERVAL_MS) return;
+    if (elapsed >= 0 && elapsed < minimumIntervalMs) return null;
     lastAccountUsageFetchAtMs = now;
 
     const usage = yield* Effect.promise(async () => {
@@ -3457,7 +3460,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return undefined;
       }
     });
-    if (!usage || usage.rate_limits === null || usage.rate_limits === undefined) return;
+    if (!usage || usage.rate_limits === null || usage.rate_limits === undefined) return null;
+
+    return {
+      createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+      payload: {
+        subscription_type: usage.subscription_type,
+        rate_limits: usage.rate_limits,
+      },
+    };
+  });
+
+  const emitAccountUsageSnapshot = Effect.fn("emitAccountUsageSnapshot")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const refreshed = yield* readAccountUsageSnapshot(context, ACCOUNT_USAGE_MIN_INTERVAL_MS);
+    if (refreshed === null) return;
 
     const stamp = yield* makeEventStamp();
     yield* offerRuntimeEvent({
@@ -3470,10 +3488,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // Only the limit fields travel: the full response also carries session
       // cost and a local behaviors scan that have no consumer here.
       payload: {
-        rateLimits: {
-          subscription_type: usage.subscription_type,
-          rate_limits: usage.rate_limits,
-        },
+        rateLimits: refreshed.payload,
       },
     });
   });
@@ -3485,6 +3500,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       Effect.forkDetach,
       Effect.asVoid,
     );
+
+  const refreshAccountLimits: NonNullable<ClaudeAdapterShape["refreshAccountLimits"]> = () =>
+    Effect.gen(function* () {
+      const context = Array.from(sessions.values()).find(
+        (candidate) => !candidate.stopped && candidate.session.status !== "closed",
+      );
+      if (!context) return null;
+      return yield* readAccountUsageSnapshot(context, ACCOUNT_USAGE_INTERACTION_MIN_INTERVAL_MS);
+    });
 
   const handleSdkTelemetryMessage = Effect.fn("handleSdkTelemetryMessage")(function* (
     context: ClaudeSessionContext,
@@ -4660,6 +4684,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
     },
+    refreshAccountLimits,
     startSession,
     sendTurn,
     interruptTurn,

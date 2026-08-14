@@ -42,12 +42,24 @@ export interface ProviderThreadSnapshot {
   readonly turns: ReadonlyArray<ProviderThreadTurnSnapshot>;
 }
 
+export interface ProviderAccountLimitsRefresh {
+  /** Same provider-native value carried by canonical event.payload.rateLimits. */
+  readonly payload: unknown;
+  readonly createdAt: string;
+}
+
 export interface ProviderAdapterShape<TError> {
   /**
    * Provider kind implemented by this adapter.
    */
   readonly provider: ProviderDriverKind;
   readonly capabilities: ProviderAdapterCapabilities;
+
+  /**
+   * Pull a fresh account-limit snapshot from a live provider session when the
+   * provider protocol exposes one. Adapters without such an API omit this.
+   */
+  readonly refreshAccountLimits?: () => Effect.Effect<ProviderAccountLimitsRefresh | null, TError>;
 
   /**
    * Start a provider-backed session.

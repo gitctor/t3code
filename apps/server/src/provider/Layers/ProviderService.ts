@@ -1051,6 +1051,27 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const refreshAccountLimits: ProviderServiceMethod<"refreshAccountLimits"> = Effect.fn(
+    "refreshAccountLimits",
+  )(function* () {
+    const currentAdapters = yield* getAdapterEntries;
+    const refreshed = yield* Effect.forEach(
+      currentAdapters,
+      ([, adapter]) => {
+        const refresh = adapter.refreshAccountLimits;
+        if (refresh === undefined) return Effect.succeed(null);
+        return refresh().pipe(
+          Effect.map((result) =>
+            result === null ? null : { ...result, provider: adapter.provider },
+          ),
+          Effect.catchCause(() => Effect.succeed(null)),
+        );
+      },
+      { concurrency: 4 },
+    );
+    return refreshed.filter((result) => result !== null);
+  });
+
   const getCapabilities: ProviderServiceMethod<"getCapabilities"> = (instanceId) =>
     registry.getByInstance(instanceId).pipe(Effect.map((adapter) => adapter.capabilities));
 
@@ -1166,6 +1187,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     respondToUserInput,
     stopSession,
     listSessions,
+    refreshAccountLimits,
     getCapabilities,
     getInstanceInfo,
     publishRuntimeWarning,

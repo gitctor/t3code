@@ -62,9 +62,8 @@ export const AccountLimitsSnapshot = Schema.Struct({
   asOf: Schema.String,
   /**
    * `live` - captured off a running provider session.
-   * `transcript` - recovered from the provider's on-disk session files
-   * (Codex writes its snapshot beside every token count; Claude never
-   * persists limits, so Claude snapshots are always `live`).
+   * `transcript` - recovered from T3's canonical provider logs or a
+   * provider-owned on-disk session transcript.
    */
   source: AccountLimitsSource,
 });

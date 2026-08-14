@@ -16,6 +16,7 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import { formatAgo, formatResetAt, formatSidebarResetAt } from "@t3tools/shared/limitsFormat";
+import { useEffect, useRef } from "react";
 
 import { cn } from "../../lib/utils";
 import { useAccountLimits } from "../../state/accountLimits";
@@ -32,6 +33,15 @@ import {
 
 /** Age past which a snapshot stops being "current" and earns a caption. */
 const STALE_AFTER_MS = 15 * 60_000;
+
+/** One interaction-driven refresh per card/strip mount; never a polling loop. */
+function useRefreshLimitsOnMount(refresh: () => void) {
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    refreshRef.current();
+  }, []);
+}
 
 function usageTone(usedPercent: number): string | undefined {
   if (usedPercent >= 95) return "text-red-400";
@@ -190,7 +200,8 @@ function AccountLimitsSidebarGauge({
 
 /** Compact per-provider availability, shown on hovering the Usage button. */
 export function AccountLimitsHoverCard() {
-  const { snapshots, isPending, isSettling, readAtMs } = useAccountLimits();
+  const { snapshots, isPending, isSettling, readAtMs, refresh } = useAccountLimits();
+  useRefreshLimitsOnMount(refresh);
 
   if (isPending && snapshots.size === 0) {
     return <p className="px-1 py-2 text-xs text-muted-foreground">Loading limits…</p>;
@@ -256,7 +267,8 @@ export function AccountLimitsHoverCard() {
 
 /** The "Limits" strip above the analytics: one column per provider. */
 export function AccountLimitsSection() {
-  const { snapshots, isSettling, readAtMs } = useAccountLimits();
+  const { snapshots, isSettling, readAtMs, refresh } = useAccountLimits();
+  useRefreshLimitsOnMount(refresh);
 
   return (
     <section className="flex flex-col gap-3">

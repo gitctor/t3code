@@ -27,6 +27,7 @@ import {
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -1966,6 +1967,21 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       { concurrency: 1 },
     );
 
+  const refreshAccountLimits: NonNullable<CodexAdapterShape["refreshAccountLimits"]> = () =>
+    Effect.gen(function* () {
+      const context = Array.from(sessions.values()).find((session) => !session.stopped);
+      if (!context) return null;
+      const payload = yield* context.runtime.readAccountLimits.pipe(
+        Effect.mapError((cause) =>
+          mapCodexRuntimeError(context.threadId, "account/rateLimits/read", cause),
+        ),
+      );
+      return {
+        payload,
+        createdAt: DateTime.formatIso(yield* DateTime.now),
+      };
+    });
+
   const hasSession: CodexAdapterShape["hasSession"] = (threadId) =>
     Effect.succeed(Boolean(sessions.get(threadId) && !sessions.get(threadId)?.stopped));
 
@@ -1988,6 +2004,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
     },
+    refreshAccountLimits,
     startSession,
     sendTurn,
     interruptTurn,

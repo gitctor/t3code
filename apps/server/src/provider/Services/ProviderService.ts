@@ -30,12 +30,17 @@ import type * as Stream from "effect/Stream";
 
 import type { ProviderServiceError } from "../Errors.ts";
 import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
+import type { ProviderAccountLimitsRefresh } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
 
 /**
  * ProviderServiceShape - Service API for provider session and turn orchestration.
  */
 export interface ProviderServiceShape {
+  /** Pull fresh limit state from every live adapter that supports it. */
+  readonly refreshAccountLimits?: () => Effect.Effect<
+    ReadonlyArray<ProviderAccountLimitsRefresh & { readonly provider: string }>
+  >;
   /**
    * Start a provider session.
    */

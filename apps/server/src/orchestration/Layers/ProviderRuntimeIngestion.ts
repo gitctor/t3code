@@ -879,6 +879,19 @@ const make = Effect.gen(function* () {
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
   const accountLimits = yield* AccountLimitsService;
+  const refreshAccountLimits = providerService.refreshAccountLimits;
+  if (accountLimits.registerLiveRefresh && refreshAccountLimits) {
+    yield* accountLimits.registerLiveRefresh(() =>
+      refreshAccountLimits().pipe(
+        Effect.flatMap((refreshed) =>
+          Effect.forEach(refreshed, (result) => accountLimits.ingest(result), {
+            concurrency: 1,
+            discard: true,
+          }),
+        ),
+      ),
+    );
+  }
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
