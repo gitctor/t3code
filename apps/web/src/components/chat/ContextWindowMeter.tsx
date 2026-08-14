@@ -1,6 +1,7 @@
 import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { AccountLimitsHoverCard } from "../usage/AccountLimits";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -133,6 +134,9 @@ export function ContextWindowMeter(props: {
               {providerDisplayName ?? "It"} automatically compacts its context when needed.
             </div>
           ) : null}
+        </div>
+        <div className="border-t border-border/60 p-[var(--floating-content-inset)]">
+          <AccountLimitsHoverCard />
         </div>
       </PopoverPopup>
     </Popover>
