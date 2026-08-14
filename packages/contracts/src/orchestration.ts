@@ -22,7 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
-import { Crew, CrewId, DispatchRecord } from "./orchestrationCrew.ts";
+import { Crew, CrewId, CrewTestFlightTurnInput, DispatchRecord } from "./orchestrationCrew.ts";
 import {
   TaskSuggestionAcceptCommand,
   TaskSuggestionAcceptedPayload,
@@ -46,6 +46,7 @@ import {
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
+  startCrewTestFlight: "orchestration.startCrewTestFlight",
   getWorkflowScript: "orchestration.getWorkflowScript",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
@@ -890,6 +891,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
    * every ordinary turn, and old payloads decode unchanged.
    */
   crewId: Schema.optional(CrewId),
+  /** Server-owned, per-turn model overrides for an operator test flight. */
+  crewTestFlight: Schema.optional(CrewTestFlightTurnInput),
   createdAt: IsoDateTime,
 });
 
@@ -1382,6 +1385,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   crewId: Schema.optional(CrewId),
+  crewTestFlight: Schema.optional(CrewTestFlightTurnInput),
   createdAt: IsoDateTime,
 });
 
@@ -1823,6 +1827,19 @@ export const OrchestrationGetCrewThreadMetadataResult = Schema.Struct({
 export type OrchestrationGetCrewThreadMetadataResult =
   typeof OrchestrationGetCrewThreadMetadataResult.Type;
 
+export const OrchestrationStartCrewTestFlightInput = Schema.Struct({
+  crewId: CrewId,
+  projectId: ProjectId,
+});
+export type OrchestrationStartCrewTestFlightInput =
+  typeof OrchestrationStartCrewTestFlightInput.Type;
+
+export const OrchestrationStartCrewTestFlightResult = Schema.Struct({
+  threadId: ThreadId,
+});
+export type OrchestrationStartCrewTestFlightResult =
+  typeof OrchestrationStartCrewTestFlightResult.Type;
+
 export const OrchestrationGetWorkflowScriptInput = Schema.Struct({
   threadId: ThreadId,
   /** Absolute path from the workflow's runHandles.scriptPath. The server
@@ -1875,6 +1892,10 @@ export const OrchestrationRpcSchemas = {
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
+  },
+  startCrewTestFlight: {
+    input: OrchestrationStartCrewTestFlightInput,
+    output: OrchestrationStartCrewTestFlightResult,
   },
   getWorkflowScript: {
     input: OrchestrationGetWorkflowScriptInput,

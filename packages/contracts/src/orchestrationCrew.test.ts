@@ -7,6 +7,7 @@ import {
   DispatchInput,
   DispatchRecord,
   ResolvedCrew,
+  CrewTestFlightTurnInput,
   isRunnableCrew,
   isSettledDispatchStatus,
 } from "./orchestrationCrew.ts";
@@ -17,6 +18,7 @@ const decodeCrewId = Schema.decodeUnknownSync(CrewId);
 const decodeCrew = Schema.decodeUnknownSync(Crew);
 const decodeDispatchRecord = Schema.decodeUnknownSync(DispatchRecord);
 const decodeResolvedCrew = Schema.decodeUnknownSync(ResolvedCrew);
+const decodeTestFlightTurnInput = Schema.decodeUnknownSync(CrewTestFlightTurnInput);
 
 const deepBuild = {
   id: "deep_build",
@@ -145,5 +147,22 @@ describe("isRunnableCrew", () => {
 
   it("does not run with nobody to dispatch to", () => {
     expect(isRunnableCrew(resolve(true, []))).toBe(false);
+  });
+});
+
+describe("CrewTestFlightTurnInput", () => {
+  it("decodes frozen per-seat model overrides without changing the saved crew", () => {
+    const input = decodeTestFlightTurnInput({
+      seatOverrides: [
+        { instanceId: "codex", model: "gpt-5.6-mini" },
+        { instanceId: "kimi", model: "kimi-code/kimi-for-coding-highspeed" },
+      ],
+    });
+
+    expect(input.seatOverrides).toEqual([
+      { instanceId: "codex", model: "gpt-5.6-mini" },
+      { instanceId: "kimi", model: "kimi-code/kimi-for-coding-highspeed" },
+    ]);
+    expect(deepBuild.members[0]?.model).toBe("gpt-5.6-sol");
   });
 });

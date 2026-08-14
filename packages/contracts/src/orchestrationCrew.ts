@@ -185,6 +185,23 @@ export type ResolvedCrew = typeof ResolvedCrew.Type;
 export const isRunnableCrew = (resolved: ResolvedCrew): boolean =>
   resolved.plannerAvailable && resolved.availableMemberIds.length > 0;
 
+/** A server-resolved model override for one crew seat during a test flight. */
+export const CrewTestFlightSeatOverride = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+});
+export type CrewTestFlightSeatOverride = typeof CrewTestFlightSeatOverride.Type;
+
+/**
+ * Server-owned turn input that marks a crew test flight and freezes its cheap
+ * per-seat models. It is intentionally absent from the ordinary client turn
+ * command, so saved crews and regular sends cannot persist these overrides.
+ */
+export const CrewTestFlightTurnInput = Schema.Struct({
+  seatOverrides: ForwardCompatibleArray(CrewTestFlightSeatOverride),
+});
+export type CrewTestFlightTurnInput = typeof CrewTestFlightTurnInput.Type;
+
 /* -------------------------------------------------------------------------
  * Orchestrator MCP toolkit I/O
  *

@@ -12,6 +12,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:dispatch-command",
       tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
     }),
+    startCrewTestFlight: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:start-crew-test-flight",
+      tag: ORCHESTRATION_WS_METHODS.startCrewTestFlight,
+    }),
     turnDiff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:turn-diff",
       tag: ORCHESTRATION_WS_METHODS.getTurnDiff,
