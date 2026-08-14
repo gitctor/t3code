@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ModelCapabilities,
+  type ServerProviderModel,
+} from "@t3tools/contracts";
 
 import {
   buildProviderOptionSelectionsFromDescriptors,
@@ -12,7 +17,16 @@ import {
   getProviderOptionStringSelectionValue,
   normalizeCustomModelSlug,
   normalizeModelSlug,
+  resolveCheapestChatModel,
 } from "./model.ts";
+
+const catalogModel = (slug: string, isDefault = false): ServerProviderModel => ({
+  slug,
+  name: slug,
+  isCustom: false,
+  ...(isDefault ? { isDefault: true } : {}),
+  capabilities: null,
+});
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -153,5 +167,63 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
+describe("cheapest chat model resolution", () => {
+  it.each([
+    {
+      driver: "claudeAgent",
+      models: [catalogModel("claude-opus-5", true), catalogModel("claude-haiku-4-5")],
+      expected: "claude-haiku-4-5",
+    },
+    {
+      driver: "codex",
+      models: [
+        catalogModel("gpt-5.6-sol", true),
+        catalogModel("gpt-5.3-codex-spark"),
+        catalogModel("gpt-5.6-mini"),
+      ],
+      expected: "gpt-5.6-mini",
+    },
+    {
+      driver: "codex",
+      models: [catalogModel("gpt-5.6-sol", true), catalogModel("gpt-5.3-codex-spark")],
+      expected: "gpt-5.3-codex-spark",
+    },
+    {
+      driver: "kimi",
+      models: [
+        catalogModel("kimi-code/k3", true),
+        catalogModel("kimi-code/kimi-for-coding-highspeed"),
+      ],
+      expected: "kimi-code/kimi-for-coding-highspeed",
+    },
+  ])("uses the $driver preference table", ({ driver, models, expected }) => {
+    expect(resolveCheapestChatModel({ driver: ProviderDriverKind.make(driver), models })).toBe(
+      expected,
+    );
+  });
+
+  it("falls back to the instance default for unmatched and unknown drivers", () => {
+    const models = [catalogModel("economy"), catalogModel("instance-default", true)];
+    expect(
+      resolveCheapestChatModel({
+        driver: ProviderDriverKind.make("custom-driver"),
+        models,
+      }),
+    ).toBe("instance-default");
+    expect(
+      resolveCheapestChatModel({ driver: ProviderDriverKind.make("claudeAgent"), models }),
+    ).toBe("instance-default");
+  });
+
+  it("uses the first live model when the catalog does not mark a default", () => {
+    expect(
+      resolveCheapestChatModel({
+        driver: ProviderDriverKind.make("custom-driver"),
+        models: [catalogModel("first"), catalogModel("second")],
+      }),
+    ).toBe("first");
   });
 });

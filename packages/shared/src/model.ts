@@ -8,9 +8,38 @@ import {
   ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
+  type ServerProvider,
 } from "@t3tools/contracts";
 
 const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+const CHEAPEST_MODEL_SLUG_PREFERENCES: Readonly<
+  Partial<Record<ProviderDriverKind, ReadonlyArray<string>>>
+> = {
+  [ProviderDriverKind.make("claudeAgent")]: ["haiku"],
+  [ProviderDriverKind.make("codex")]: ["mini", "spark"],
+  [ProviderDriverKind.make("kimi")]: ["highspeed"],
+};
+
+/**
+ * Resolve the least expensive model advertised by one live provider instance.
+ * Every advertised model is chat-capable in the current provider catalog.
+ * Unknown drivers and unmatched catalogs retain the instance's own default.
+ */
+export function resolveCheapestChatModel(
+  provider: Pick<ServerProvider, "driver" | "models">,
+): string | undefined {
+  const preferences = CHEAPEST_MODEL_SLUG_PREFERENCES[provider.driver] ?? [];
+  for (const preference of preferences) {
+    const match = provider.models.find((model) =>
+      model.slug.toLocaleLowerCase().includes(preference),
+    );
+    if (match) return match.slug;
+  }
+  return (
+    provider.models.find((model) => model.isDefault === true)?.slug ?? provider.models[0]?.slug
+  );
+}
 
 export interface SelectableModelOption {
   slug: string;
