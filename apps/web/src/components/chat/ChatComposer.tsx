@@ -222,9 +222,11 @@ import {
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import {
+  providerSupportsActiveTurnSteer,
   resolveActiveTurnMessageBehavior,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
+import type { QueuedWebThreadMessage } from "../../webThreadOutbox";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
@@ -417,10 +419,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   activeTurnMessageBehavior: UnifiedSettings["activeTurnMessageBehavior"];
+  canSteerActiveTurn: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onSendWithBehavior: (behavior: "steer" | "queue") => void;
 }) {
   return (
     <>
@@ -446,10 +450,12 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         activeTurnMessageBehavior={props.activeTurnMessageBehavior}
+        canSteerActiveTurn={props.canSteerActiveTurn}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
+        onSendWithBehavior={props.onSendWithBehavior}
       />
     </>
   );
@@ -527,7 +533,7 @@ export interface ChatComposerProps {
   isSendBusy: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
-  queuedMessageCount: number;
+  queuedMessages: ReadonlyArray<QueuedWebThreadMessage>;
   queuedMessagesPaused: boolean;
   environmentUnavailable: {
     readonly label: string;
@@ -583,8 +589,9 @@ export interface ChatComposerProps {
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
-  onSend: (e?: { preventDefault: () => void }) => void;
+  onSend: (e?: { preventDefault: () => void }, behaviorOverride?: "steer" | "queue") => void;
   onRetryQueuedMessages: () => void;
+  onSteerQueuedMessageNow: (message: QueuedWebThreadMessage) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -638,7 +645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     sendDisabledReason,
     isPreparingWorktree,
-    queuedMessageCount,
+    queuedMessages,
     queuedMessagesPaused,
     environmentUnavailable,
     activePendingApproval,
@@ -671,6 +678,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerElementContextsRef,
     onSend,
     onRetryQueuedMessages,
+    onSteerQueuedMessageNow,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -898,6 +906,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     settings.activeTurnMessageBehavior,
     selectedProvider,
   );
+  const canSteerActiveTurn = providerSupportsActiveTurnSteer(selectedProvider);
 
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
@@ -1879,7 +1888,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const submitComposer = useCallback(
-    (event?: { preventDefault: () => void }) => {
+    (event?: { preventDefault: () => void }, behaviorOverride?: "steer" | "queue") => {
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
@@ -1897,7 +1906,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         return;
       }
-      onSend(event);
+      onSend(event, behaviorOverride);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
@@ -2877,10 +2886,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isPreparingWorktree={false}
                       hasSendableContent={false}
                       activeTurnMessageBehavior={activeTurnMessageBehavior}
+                      canSteerActiveTurn={false}
                       preserveComposerFocusOnPointerDown
                       onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                       onInterrupt={handleInterruptPrimaryAction}
                       onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                      onSendWithBehavior={() => {}}
                     />
                   ) : null}
                 </div>
@@ -3161,10 +3172,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={false}
                     hasSendableContent={false}
                     activeTurnMessageBehavior={activeTurnMessageBehavior}
+                    canSteerActiveTurn={false}
                     preserveComposerFocusOnPointerDown
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                    onSendWithBehavior={() => {}}
                   />
                 </div>
               ) : null}
@@ -3290,34 +3303,58 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
                   activeTurnMessageBehavior={activeTurnMessageBehavior}
+                  canSteerActiveTurn={canSteerActiveTurn}
                   preserveComposerFocusOnPointerDown={isMobileViewport}
                   onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                   onInterrupt={handleInterruptPrimaryAction}
                   onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                  onSendWithBehavior={(behavior) => submitComposer(undefined, behavior)}
                 />
               </div>
             </div>
           )}
-          {queuedMessageCount > 0 ? (
-            <div
-              className="flex items-center justify-between gap-3 px-3 pb-2.5 text-xs text-muted-foreground sm:px-4 sm:pb-3"
-              data-chat-queued-message-count={queuedMessageCount}
-            >
-              <span>
-                {queuedMessageCount} queued message{queuedMessageCount === 1 ? "" : "s"} will send
-                one at a time.
-              </span>
-              {queuedMessagesPaused ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 shrink-0 rounded-full px-3 text-xs"
-                  onClick={onRetryQueuedMessages}
-                >
-                  Retry
-                </Button>
-              ) : null}
+          {queuedMessages.length > 0 ? (
+            <div className="flex flex-col gap-1 px-3 pb-2.5 sm:px-4 sm:pb-3">
+              {queuedMessages.map((message, index) => {
+                const queuedProvider = providerInstanceEntries.find(
+                  (entry) => entry.instanceId === message.modelSelection.instanceId,
+                )?.driverKind;
+                const canSteerQueuedMessage = providerSupportsActiveTurnSteer(queuedProvider);
+                return (
+                  <div
+                    key={message.messageId}
+                    className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground"
+                    data-chat-queued-message-id={message.messageId}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {message.text.trim() ||
+                        (message.attachments.length > 0 ? "Queued attachment" : "Queued message")}
+                    </span>
+                    {phase === "running" && canSteerQueuedMessage ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 shrink-0 rounded-full px-3 text-xs"
+                        onClick={() => onSteerQueuedMessageNow(message)}
+                      >
+                        Steer now
+                      </Button>
+                    ) : null}
+                    {index === 0 && queuedMessagesPaused ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 shrink-0 rounded-full px-3 text-xs"
+                        onClick={onRetryQueuedMessages}
+                      >
+                        Retry
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </div>

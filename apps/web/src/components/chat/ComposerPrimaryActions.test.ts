@@ -15,7 +15,11 @@ vi.mock("../SidebarStageBackdrop", () => ({
   useSidebarStageBackdropVariant: (enabled = true) => (enabled ? stageArtworkState.variant : null),
 }));
 
-import { ComposerPrimaryActions, formatPendingPrimaryActionLabel } from "./ComposerPrimaryActions";
+import {
+  ComposerPrimaryActions,
+  formatPendingPrimaryActionLabel,
+  getActiveTurnDeliveryActions,
+} from "./ComposerPrimaryActions";
 
 function renderPendingActions(isRunning: boolean) {
   return renderToStaticMarkup(
@@ -38,9 +42,11 @@ function renderPendingActions(isRunning: boolean) {
       isPreparingWorktree: false,
       hasSendableContent: false,
       activeTurnMessageBehavior: "steer",
+      canSteerActiveTurn: true,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
+      onSendWithBehavior: () => {},
     }),
   );
 }
@@ -60,9 +66,11 @@ function renderStandaloneStop(activeTurnMessageBehavior: "steer" | "queue" = "st
       isPreparingWorktree: false,
       hasSendableContent: false,
       activeTurnMessageBehavior,
+      canSteerActiveTurn: true,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
+      onSendWithBehavior: () => {},
     }),
   );
 }
@@ -82,9 +90,11 @@ function renderSendButton() {
       isPreparingWorktree: false,
       hasSendableContent: true,
       activeTurnMessageBehavior: "steer",
+      canSteerActiveTurn: true,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
+      onSendWithBehavior: () => {},
     }),
   );
 }
@@ -227,5 +237,29 @@ describe("ComposerPrimaryActions", () => {
 
     expect(markup).not.toContain("stage-nightly");
     expect(markup).toContain("bg-message-action text-message-action-foreground");
+  });
+});
+
+describe("getActiveTurnDeliveryActions", () => {
+  it("offers a one-shot Steer and Queue for capable providers", () => {
+    expect(
+      getActiveTurnDeliveryActions({ canSteer: true, savedBehavior: "steer" }).map((action) => [
+        action.behavior,
+        action.isDefault,
+      ]),
+    ).toEqual([
+      ["steer", true],
+      ["queue", false],
+    ]);
+  });
+
+  it("keeps queue-only providers honest", () => {
+    expect(getActiveTurnDeliveryActions({ canSteer: false, savedBehavior: "queue" })).toEqual([
+      {
+        behavior: "queue",
+        label: "Queue — send after this turn",
+        isDefault: true,
+      },
+    ]);
   });
 });

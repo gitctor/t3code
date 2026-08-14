@@ -11,6 +11,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildPromotedQueuedWebThreadTurnStartInput,
   buildQueuedWebThreadTurnStartInput,
   shouldPauseWebThreadOutboxDelivery,
 } from "./WebThreadOutboxDrain.logic";
@@ -40,6 +41,17 @@ describe("buildQueuedWebThreadTurnStartInput", () => {
     expect(input.threadId).toBe(queuedPlannerMessage.threadId);
     expect(input.crewId).toBe(queuedPlannerMessage.crewId);
     expect(input.message.text).toBe(queuedPlannerMessage.text);
+  });
+});
+
+describe("buildPromotedQueuedWebThreadTurnStartInput", () => {
+  it("promotes the exact queued message with its crew and dispatch identity", () => {
+    const input = buildPromotedQueuedWebThreadTurnStartInput(queuedPlannerMessage, "Planner");
+
+    expect(input.commandId).toBe(queuedPlannerMessage.commandId);
+    expect(input.message.messageId).toBe(queuedPlannerMessage.messageId);
+    expect(input.crewId).toBe(queuedPlannerMessage.crewId);
+    expect(input.modelSelection).toBe(queuedPlannerMessage.modelSelection);
   });
 });
 

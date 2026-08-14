@@ -1,4 +1,5 @@
-import { memo, type PointerEventHandler } from "react";
+import { ContextMenu } from "@base-ui/react/context-menu";
+import { memo, type PointerEventHandler, useEffect, useRef, useState } from "react";
 import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
@@ -29,10 +30,40 @@ interface ComposerPrimaryActionsProps {
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   activeTurnMessageBehavior: ActiveTurnMessageBehavior;
+  canSteerActiveTurn: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onSendWithBehavior: (behavior: ActiveTurnMessageBehavior) => void;
+}
+
+export interface ActiveTurnDeliveryAction {
+  readonly behavior: ActiveTurnMessageBehavior;
+  readonly label: string;
+  readonly isDefault: boolean;
+}
+
+export function getActiveTurnDeliveryActions(input: {
+  readonly canSteer: boolean;
+  readonly savedBehavior: ActiveTurnMessageBehavior;
+}): ReadonlyArray<ActiveTurnDeliveryAction> {
+  return [
+    ...(input.canSteer
+      ? [
+          {
+            behavior: "steer" as const,
+            label: "Steer — send into the running turn",
+            isDefault: input.savedBehavior === "steer",
+          },
+        ]
+      : []),
+    {
+      behavior: "queue",
+      label: "Queue — send after this turn",
+      isDefault: input.savedBehavior === "queue",
+    },
+  ];
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -70,11 +101,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isPreparingWorktree,
   hasSendableContent,
   activeTurnMessageBehavior,
+  canSteerActiveTurn,
   preserveComposerFocusOnPointerDown = false,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  onSendWithBehavior,
 }: ComposerPrimaryActionsProps) {
+  const [deliveryMenuOpen, setDeliveryMenuOpen] = useState(false);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
     : undefined;
@@ -83,6 +119,22 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current !== null) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+  useEffect(
+    () => () => {
+      if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+    },
+    [],
+  );
+  const deliveryActions = getActiveTurnDeliveryActions({
+    canSteer: canSteerActiveTurn,
+    savedBehavior: activeTurnMessageBehavior,
+  });
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <button
@@ -158,6 +210,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const sendButton = (
     <button
+      ref={sendButtonRef}
       type="submit"
       className={cn(
         "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-[0_1px_--theme(--color-white/16%)] hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8",
@@ -216,7 +269,48 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return (
       <div className="flex items-center justify-end gap-2">
         {renderStopGenerationButton(false)}
-        {sendButton}
+        <ContextMenu.Root open={deliveryMenuOpen} onOpenChange={setDeliveryMenuOpen}>
+          <ContextMenu.Trigger
+            render={sendButton}
+            onPointerEnter={() => {
+              clearHoverTimer();
+              if (!isSendDisabled && hasSendableContent) {
+                hoverTimerRef.current = setTimeout(() => setDeliveryMenuOpen(true), 650);
+              }
+            }}
+            onPointerLeave={clearHoverTimer}
+            onKeyDown={(event) => {
+              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                event.preventDefault();
+                setDeliveryMenuOpen(true);
+              }
+            }}
+          />
+          <ContextMenu.Portal>
+            <ContextMenu.Positioner
+              anchor={sendButtonRef}
+              align="end"
+              className="z-[130]"
+              side="top"
+              sideOffset={6}
+            >
+              <ContextMenu.Popup className="dropdown-glass relative flex min-w-72 rounded-lg p-1 outline-none">
+                {deliveryActions.map((action) => (
+                  <ContextMenu.Item
+                    key={action.behavior}
+                    className="flex min-h-8 cursor-pointer items-center gap-3 rounded-sm px-2 py-1 text-sm text-foreground outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                    onClick={() => onSendWithBehavior(action.behavior)}
+                  >
+                    <span>{action.label}</span>
+                    {action.isDefault ? (
+                      <span className="ml-auto text-xs text-muted-foreground">Default</span>
+                    ) : null}
+                  </ContextMenu.Item>
+                ))}
+              </ContextMenu.Popup>
+            </ContextMenu.Positioner>
+          </ContextMenu.Portal>
+        </ContextMenu.Root>
       </div>
     );
   }

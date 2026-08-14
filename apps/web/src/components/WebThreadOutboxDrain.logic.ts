@@ -27,6 +27,14 @@ export function buildQueuedWebThreadTurnStartInput(
   };
 }
 
+/** The immediate path uses the same durable payload, but bypasses drain timing. */
+export function buildPromotedQueuedWebThreadTurnStartInput(
+  message: QueuedWebThreadMessage,
+  titleSeed: string,
+) {
+  return buildQueuedWebThreadTurnStartInput(message, titleSeed);
+}
+
 export function shouldPauseWebThreadOutboxDelivery(
   result: AtomCommandResult<unknown, unknown>,
 ): boolean {

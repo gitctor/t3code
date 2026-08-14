@@ -188,13 +188,21 @@ import {
   useClientSettingsHydrated,
   useEnvironmentSettings,
 } from "../hooks/useSettings";
-import { resolveActiveTurnMessageBehavior } from "@t3tools/contracts/settings";
 import {
+  providerSupportsActiveTurnSteer,
+  resolveActiveTurnMessageBehavior,
+  type ActiveTurnMessageBehavior,
+} from "@t3tools/contracts/settings";
+import {
+  beginWebThreadOutboxDispatch,
   EMPTY_WEB_THREAD_OUTBOX_QUEUE,
+  finishWebThreadOutboxDispatch,
+  type QueuedWebThreadMessage,
   shouldQueueWebThreadMessage,
   useWebThreadOutboxStore,
   webThreadOutboxKey,
 } from "../webThreadOutbox";
+import { buildPromotedQueuedWebThreadTurnStartInput } from "./WebThreadOutboxDrain.logic";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -5004,6 +5012,7 @@ function ChatViewContent(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    activeTurnMessageBehaviorOverride?: ActiveTurnMessageBehavior,
   ) => {
     e?.preventDefault();
     const notifyDirectAnnotationAttached = () => {
@@ -5020,13 +5029,17 @@ function ChatViewContent(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    const selectedProviderForSend = composerRef.current?.getSendContext()?.selectedProvider;
     const activeTurnMessageBehavior = resolveActiveTurnMessageBehavior(
-      settings.activeTurnMessageBehavior,
-      composerRef.current?.getSendContext()?.selectedProvider,
+      activeTurnMessageBehaviorOverride ?? settings.activeTurnMessageBehavior,
+      selectedProviderForSend,
     );
     const shouldQueueCurrentMessage = shouldQueueWebThreadMessage({
       activeTurnMessageBehavior,
-      hasQueuedMessages: activeThreadOutboxQueue.length > 0,
+      // A one-shot Steer intentionally jumps the local queue. Saved-default
+      // sends retain FIFO behavior.
+      hasQueuedMessages:
+        activeTurnMessageBehaviorOverride === "steer" ? false : activeThreadOutboxQueue.length > 0,
       isSendBusy,
       isServerThread,
       phase,
@@ -5566,6 +5579,51 @@ function ChatViewContent(props: ChatViewProps) {
     useWebThreadOutboxStore.getState().retry(nextQueuedMessage.messageId);
     setThreadError(nextQueuedMessage.threadId, null);
   }, [nextQueuedMessage, setThreadError]);
+
+  const steerQueuedMessageNow = useCallback(
+    async (message: QueuedWebThreadMessage) => {
+      const selectedProvider =
+        deriveProviderInstanceEntries(providerStatuses).find(
+          (entry) => entry.instanceId === message.modelSelection.instanceId,
+        )?.driverKind ?? composerRef.current?.getSendContext()?.selectedProvider;
+      if (
+        phase !== "running" ||
+        !providerSupportsActiveTurnSteer(selectedProvider) ||
+        !beginWebThreadOutboxDispatch(message.messageId)
+      ) {
+        return;
+      }
+      try {
+        const result = await startThreadTurn({
+          environmentId: message.environmentId,
+          input: buildPromotedQueuedWebThreadTurnStartInput(
+            message,
+            activeThread?.title ?? message.text,
+          ),
+        });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            setThreadError(
+              message.threadId,
+              error instanceof Error ? error.message : "Failed to steer the queued message.",
+            );
+          }
+          return;
+        }
+        useWebThreadOutboxStore.getState().remove(message);
+        setThreadError(message.threadId, null);
+      } catch (error) {
+        setThreadError(
+          message.threadId,
+          error instanceof Error ? error.message : "Failed to steer the queued message.",
+        );
+      } finally {
+        finishWebThreadOutboxDispatch(message.messageId);
+      }
+    },
+    [activeThread?.title, phase, providerStatuses, setThreadError, startThreadTurn],
+  );
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -6702,7 +6760,7 @@ function ChatViewContent(props: ChatViewProps) {
                                   : null
                             }
                             isPreparingWorktree={isPreparingWorktree}
-                            queuedMessageCount={activeThreadOutboxQueue.length}
+                            queuedMessages={activeThreadOutboxQueue}
                             queuedMessagesPaused={queuedMessagePaused}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
@@ -6734,8 +6792,11 @@ function ChatViewContent(props: ChatViewProps) {
                             composerImagesRef={composerImagesRef}
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
-                            onSend={onSend}
+                            onSend={(event, behaviorOverride) =>
+                              onSend(event, undefined, behaviorOverride)
+                            }
                             onRetryQueuedMessages={retryQueuedMessages}
+                            onSteerQueuedMessageNow={steerQueuedMessageNow}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}
