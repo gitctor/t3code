@@ -19,14 +19,14 @@ Visual QA screenshot: Open a branched thread menu in the desktop app and web fal
 
 ## 2. One Tabs style
 
-What changed: Replaced the bespoke Usage range selector and both PR detail tab variants with the shared `ToggleGroup` and `Toggle` components. All three now share the same active height and state treatment.
+What changed: Replaced the bespoke Usage range selector and both thread-view PR tab variants with the shared `ToggleGroup` and `Toggle` components. All three now share the same active height and state treatment.
 
 Files:
 
 - `apps/web/src/components/usage/UsagePage.tsx`
 - `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx`
 
-Visual QA screenshot: Capture the Usage time-range tabs beside the date range. Capture Summary, Timeline, and Code in both expanded and condensed PR detail chrome with an active tab.
+Visual QA screenshot: Capture the Usage time-range tabs beside the date range. Capture Summary, Timeline, and Code in the thread view with expanded and condensed chrome and an active tab.
 
 ## 3. Disabled means disabled
 
@@ -79,10 +79,11 @@ Visual QA screenshot: Capture the far-right refresh control in PR, Usage web, Us
 
 ## Verification
 
-- Focused tests: 8 files passed, 205 tests passed.
+- Focused tests: 8 files passed, 206 tests passed.
 - Required regressions passed: `apps/web/src/crewSelection.test.ts` and `apps/server/src/server.test.ts`.
 - Targeted lint passed for every touched TypeScript and TSX file.
 - `tsgo --noEmit` passed in `apps/web`.
 - `tsgo --noEmit` passed in `packages/contracts`.
-- `tsgo --noEmit` in `apps/desktop` reached an unchanged pre-existing fixture error: `src/settings/DesktopClientSettings.test.ts:15` is missing `activeTurnMessageBehavior`, `autoOpenPlanSidebar`, `favoriteCrewIds`, and `crewLastUsedAt`. The sweep does not touch that fixture.
+- `tsgo --noEmit` passed in `apps/desktop` with two non-blocking Effect suggestions in unchanged files.
+- A separate session added `a36c2eafe` after the six sweep commits. It is outside this sweep and was preserved.
 - No browser, dev server, push, or PR was used.

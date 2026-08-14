@@ -86,7 +86,11 @@ export function ContextWindowMeter(props: {
         side="top"
         align="end"
         viewportClassName="p-0"
-        className="w-64 max-w-none text-left whitespace-normal"
+        // h-auto!: the popup normally freezes at the height measured on open,
+        // but the limits card below updates in place after mount (cached ->
+        // fresh), so a frozen height clips its last row. Auto height follows
+        // the content.
+        className="h-auto! w-64 max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
           <div className="flex items-center justify-between gap-3">
