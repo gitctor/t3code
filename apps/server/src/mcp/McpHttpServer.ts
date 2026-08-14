@@ -12,6 +12,7 @@ import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "eff
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import { isOrchestrationMcpToolName } from "./OrchestrationMcpPolicy.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestrationToolkitHandlersLive } from "./toolkits/orchestration/handlers.ts";
@@ -70,7 +71,6 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
-const ORCHESTRATION_TOOL_NAMES = new Set(["dispatch", "await_dispatch", "list_dispatches"]);
 const MESSAGING_TOOL_NAMES = new Set(["list_threads", "send_to_thread"]);
 
 const filterCapabilityTools = (
@@ -91,7 +91,7 @@ const filterCapabilityTools = (
     (tool) =>
       !Predicate.isObject(tool) ||
       typeof tool.name !== "string" ||
-      ((!ORCHESTRATION_TOOL_NAMES.has(tool.name) || capabilities.has("orchestration")) &&
+      ((!isOrchestrationMcpToolName(tool.name) || capabilities.has("orchestration")) &&
         (!MESSAGING_TOOL_NAMES.has(tool.name) || capabilities.has("messaging"))),
   );
   return filtered.length === tools.length

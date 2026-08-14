@@ -77,6 +77,10 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  canAutoApproveOrchestrationMcpTool,
+  parseClaudeMcpToolName,
+} from "../../mcp/OrchestrationMcpPolicy.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -4044,6 +4048,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             behavior: "deny",
             message:
               "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn.",
+          } satisfies PermissionResult;
+        }
+
+        const mcpTool = parseClaudeMcpToolName(toolName);
+        const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        if (
+          mcpTool &&
+          canAutoApproveOrchestrationMcpTool({
+            capabilities: mcpSession?.capabilities,
+            serverName: mcpTool.serverName,
+            toolName: mcpTool.toolName,
+          })
+        ) {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput,
           } satisfies PermissionResult;
         }
 

@@ -108,6 +108,7 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
+  readonly shouldAutoApproveMcpToolCall?: (serverName: string, toolName: string) => boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -915,6 +916,9 @@ export const makeCodexSessionRuntime = (
     const pendingApprovalsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingApproval>());
     const approvalCorrelationsRef = yield* Ref.make(new Map<string, ApprovalCorrelation>());
     const pendingUserInputsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingUserInput>());
+    const activeMcpToolCallsRef = yield* Ref.make(
+      new Map<string, { readonly serverName: string; readonly toolName: string }>(),
+    );
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const collabChildAgentsRef = yield* Ref.make(new Map<string, CollabChildAgentState>());
     /** Child provider-thread id → its currently running provider turn id. */
@@ -1612,6 +1616,33 @@ export const makeCodexSessionRuntime = (
 
     yield* client.handleServerRequest("item/tool/requestUserInput", (payload) =>
       Effect.gen(function* () {
+        const activeMcpTool = (yield* Ref.get(activeMcpToolCallsRef)).get(payload.itemId);
+        const autoApprovalAnswers = payload.questions.map((question) => ({
+          questionId: question.id,
+          allowLabel: question.options?.find((option) => option.label === "Allow")?.label,
+        }));
+        if (
+          activeMcpTool &&
+          payload.questions.length > 0 &&
+          autoApprovalAnswers.every(
+            ({ questionId, allowLabel }) =>
+              questionId.startsWith("mcp_tool_call_approval_") && allowLabel !== undefined,
+          ) &&
+          options.shouldAutoApproveMcpToolCall?.(
+            activeMcpTool.serverName,
+            activeMcpTool.toolName,
+          ) === true
+        ) {
+          return {
+            answers: Object.fromEntries(
+              autoApprovalAnswers.map(({ questionId, allowLabel }) => [
+                questionId,
+                { answers: [allowLabel ?? "Allow"] },
+              ]),
+            ),
+          } satisfies EffectCodexSchema.ToolRequestUserInputResponse;
+        }
+
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4("user-input-request"));
         const turnId = TurnId.make(payload.turnId);
         const itemId = ProviderItemId.make(payload.itemId);
@@ -1665,11 +1696,32 @@ export const makeCodexSessionRuntime = (
     );
 
     const registerServerNotification = <M extends CodexRpc.ServerNotificationMethod>(method: M) =>
-      client.handleServerNotification(method, (params) =>
-        Queue.offer(serverNotifications, makeCodexServerNotification(method, params)).pipe(
-          Effect.asVoid,
-        ),
-      );
+      client.handleServerNotification(method, (params) => {
+        const enqueue = Queue.offer(
+          serverNotifications,
+          makeCodexServerNotification(method, params),
+        ).pipe(Effect.asVoid);
+        if (method !== "item/started" && method !== "item/completed") {
+          return enqueue;
+        }
+        const item = (
+          params as
+            | EffectCodexSchema.V2ItemStartedNotification
+            | EffectCodexSchema.V2ItemCompletedNotification
+        ).item;
+        if (item.type !== "mcpToolCall") {
+          return enqueue;
+        }
+        return Ref.update(activeMcpToolCallsRef, (current) => {
+          const next = new Map(current);
+          if (method === "item/started") {
+            next.set(item.id, { serverName: item.server, toolName: item.tool });
+          } else {
+            next.delete(item.id);
+          }
+          return next;
+        }).pipe(Effect.andThen(enqueue));
+      });
 
     yield* Effect.forEach(
       Object.values(

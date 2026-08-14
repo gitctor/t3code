@@ -422,7 +422,7 @@ it.effect("accepts a rostered dispatch into an ordinary child thread and worktre
   ),
 );
 
-it.effect("runs a test-flight seat on its override without a worktree and settles normally", () =>
+it.effect("accepts a test-flight seat on its override and settles without a rejection", () =>
   withHarness(
     { testFlight: true },
     ({ broker, commands, dispatches, threads, worktreeBases, reconcileDispatches }) =>
@@ -484,6 +484,7 @@ it.effect("runs a test-flight seat on its override without a worktree and settle
           model: "claude-haiku-4-5",
           summary: "TEST COMPLETE — build",
         });
+        expect(dispatches.get(accepted.dispatchId)?.reason).toBeNull();
         const completed = commands.find(
           (command) =>
             command.type === "thread.activity.append" && command.activity.kind === "task.completed",

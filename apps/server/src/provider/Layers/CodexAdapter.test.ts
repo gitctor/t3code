@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -35,6 +36,7 @@ import * as Stream from "effect/Stream";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -298,6 +300,44 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
+
+  it.effect("wires live crew capability policy into Codex MCP approvals", () => {
+    const threadId = asThreadId("thread-codex-crew-approval");
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment-codex-crew-approval"),
+      threadId,
+      providerSessionId: "codex-crew-session",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      endpoint: "http://127.0.0.1:3210/mcp",
+      authorizationHeader: "Bearer crew-test-token",
+      capabilities: new Set(["preview", "suggestions", "orchestration"]),
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "approval-required",
+      });
+
+      const policy = validationRuntimeFactory.lastRuntime?.options.shouldAutoApproveMcpToolCall;
+      NodeAssert.equal(typeof policy, "function");
+      NodeAssert.equal(policy?.("t3-code", "dispatch"), true);
+      NodeAssert.equal(policy?.("t3-code", "await_dispatch"), true);
+      NodeAssert.equal(policy?.("t3-code", "list_dispatches"), true);
+      NodeAssert.equal(policy?.("t3-code", "preview_open"), false);
+      NodeAssert.equal(policy?.("another-server", "dispatch"), false);
+
+      McpProviderSession.setMcpProviderSessionCapabilities(
+        threadId,
+        new Set(["preview", "suggestions"]),
+      );
+      NodeAssert.equal(policy?.("t3-code", "dispatch"), false);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();

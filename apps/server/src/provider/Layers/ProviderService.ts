@@ -775,10 +775,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
-      yield* McpSessionRegistry.setActiveMcpThreadCapabilities(
-        input.threadId,
-        mcpCapabilitiesForCrew(input.crewId),
-      );
+      const mcpCapabilities = mcpCapabilitiesForCrew(input.crewId);
+      yield* McpSessionRegistry.setActiveMcpThreadCapabilities(input.threadId, mcpCapabilities);
+      McpProviderSession.setMcpProviderSessionCapabilities(input.threadId, mcpCapabilities);
       const routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.sendTurn",

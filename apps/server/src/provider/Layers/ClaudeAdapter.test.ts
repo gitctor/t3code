@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -34,6 +35,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
@@ -3305,6 +3307,108 @@ describe("ClaudeAdapterLive", () => {
       const permissionResult = yield* Effect.promise(() => permissionPromise);
       assert.equal((permissionResult as PermissionResult).behavior, "allow");
     }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("auto-approves only crew orchestration MCP tools in supervised mode", () => {
+    const harness = makeHarness();
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment-claude-crew-approval"),
+      threadId: THREAD_ID,
+      providerSessionId: "claude-crew-session",
+      providerInstanceId: ProviderInstanceId.make("claude-crew-instance"),
+      endpoint: "http://127.0.0.1:3210/mcp",
+      authorizationHeader: "Bearer crew-test-token",
+      capabilities: new Set(["preview", "suggestions", "orchestration"]),
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const canUseTool = harness.getLastCreateQueryInput()?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const dispatchResult = yield* Effect.promise(() =>
+        canUseTool(
+          "mcp__t3-code__dispatch",
+          { task: "Investigate the approval path" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "crew-dispatch-1",
+          },
+        ),
+      );
+      assert.deepEqual(dispatchResult, {
+        behavior: "allow",
+        updatedInput: { task: "Investigate the approval path" },
+      } satisfies PermissionResult);
+
+      const previewPermission = canUseTool(
+        "mcp__t3-code__preview_open",
+        { url: "/settings" },
+        {
+          signal: new AbortController().signal,
+          toolUseID: "crew-preview-1",
+        },
+      );
+      const previewRequest = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(previewRequest._tag, "Some");
+      if (previewRequest._tag !== "Some" || previewRequest.value.type !== "request.opened") {
+        return;
+      }
+      assert.equal(
+        (previewRequest.value.payload.args as { toolName?: string }).toolName,
+        "mcp__t3-code__preview_open",
+      );
+      yield* adapter.respondToRequest(
+        session.threadId,
+        ApprovalRequestId.make(String(previewRequest.value.requestId)),
+        "decline",
+      );
+      yield* Stream.runHead(adapter.streamEvents);
+      assert.equal((yield* Effect.promise(() => previewPermission)).behavior, "deny");
+
+      McpProviderSession.setMcpProviderSessionCapabilities(
+        THREAD_ID,
+        new Set(["preview", "suggestions"]),
+      );
+      const nonCrewDispatchPermission = canUseTool(
+        "mcp__t3-code__dispatch",
+        { task: "This turn has no crew" },
+        {
+          signal: new AbortController().signal,
+          toolUseID: "non-crew-dispatch-1",
+        },
+      );
+      const nonCrewRequest = yield* Stream.runHead(adapter.streamEvents);
+      assert.equal(nonCrewRequest._tag, "Some");
+      if (nonCrewRequest._tag !== "Some" || nonCrewRequest.value.type !== "request.opened") {
+        return;
+      }
+      assert.equal(
+        (nonCrewRequest.value.payload.args as { toolName?: string }).toolName,
+        "mcp__t3-code__dispatch",
+      );
+      yield* adapter.respondToRequest(
+        session.threadId,
+        ApprovalRequestId.make(String(nonCrewRequest.value.requestId)),
+        "decline",
+      );
+      yield* Stream.runHead(adapter.streamEvents);
+      assert.equal((yield* Effect.promise(() => nonCrewDispatchPermission)).behavior, "deny");
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID))),
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
     );
