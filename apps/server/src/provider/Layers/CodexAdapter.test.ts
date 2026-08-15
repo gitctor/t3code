@@ -321,10 +321,25 @@ validationLayer("CodexAdapterLive validation", (it) => {
       yield* adapter.startSession({
         provider: ProviderDriverKind.make("codex"),
         threadId,
+        crewId: CrewId.make("orchestrator"),
         runtimeMode: "approval-required",
       });
 
-      const policy = validationRuntimeFactory.lastRuntime?.options.shouldAutoApproveMcpToolCall;
+      const runtimeOptions = validationRuntimeFactory.lastRuntime?.options;
+      NodeAssert.deepStrictEqual(runtimeOptions?.appServerArgs, [
+        "-c",
+        "mcp_servers.t3-code.url=http://127.0.0.1:3210/mcp",
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+        "-c",
+        'mcp_servers.t3-code.tools.dispatch.approval_mode="approve"',
+        "-c",
+        'mcp_servers.t3-code.tools.await_dispatch.approval_mode="approve"',
+        "-c",
+        'mcp_servers.t3-code.tools.list_dispatches.approval_mode="approve"',
+      ]);
+
+      const policy = runtimeOptions?.shouldAutoApproveMcpToolCall;
       NodeAssert.equal(typeof policy, "function");
       NodeAssert.equal(policy?.("t3-code", "dispatch"), true);
       NodeAssert.equal(policy?.("t3-code", "await_dispatch"), true);
@@ -337,6 +352,37 @@ validationLayer("CodexAdapterLive validation", (it) => {
         new Set(["preview", "suggestions"]),
       );
       NodeAssert.equal(policy?.("t3-code", "dispatch"), false);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
+    );
+  });
+
+  it.effect("keeps non-crew MCP config overrides byte-identical", () => {
+    const threadId = asThreadId("thread-codex-non-crew-config");
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment-codex-non-crew-config"),
+      threadId,
+      providerSessionId: "codex-non-crew-session",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      endpoint: "http://127.0.0.1:3211/mcp",
+      authorizationHeader: "Bearer non-crew-test-token",
+      capabilities: new Set(["preview", "suggestions"]),
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "approval-required",
+      });
+
+      NodeAssert.deepStrictEqual(validationRuntimeFactory.lastRuntime?.options.appServerArgs, [
+        "-c",
+        "mcp_servers.t3-code.url=http://127.0.0.1:3211/mcp",
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+      ]);
     }).pipe(
       Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );

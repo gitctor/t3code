@@ -43,7 +43,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import { canAutoApproveOrchestrationMcpTool } from "../../mcp/OrchestrationMcpPolicy.ts";
+import {
+  canAutoApproveOrchestrationMcpTool,
+  ORCHESTRATION_MCP_TOOL_NAMES,
+} from "../../mcp/OrchestrationMcpPolicy.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -1726,6 +1729,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
                   "-c",
                   'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  ...(input.crewId === undefined
+                    ? []
+                    : ORCHESTRATION_MCP_TOOL_NAMES.flatMap((toolName) => [
+                        "-c",
+                        `mcp_servers.t3-code.tools.${toolName}.approval_mode="approve"`,
+                      ])),
                 ],
               }
             : {}),

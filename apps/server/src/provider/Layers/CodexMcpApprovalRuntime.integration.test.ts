@@ -110,7 +110,7 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
         responses.filter((response) => response.method === "config/mcpServer/reload"),
         0,
       );
-      assert.equal(turnStartRequest?.params?.approvalPolicy, "on-request");
+      assert.equal(turnStartRequest?.params?.approvalPolicy, "untrusted");
       assert.deepEqual(turnStartRequest?.params?.sandboxPolicy, { type: "readOnly" });
       assert.deepEqual(responses.find((response) => response.id === 101)?.result?.answers, {
         "mcp_tool_call_approval_mcp-dispatch-approval": { answers: ["Allow"] },
