@@ -1,5 +1,6 @@
 import {
   ApprovalRequestId,
+  type CrewId,
   DEFAULT_MODEL,
   EventId,
   ProviderDriverKind,
@@ -121,6 +122,7 @@ export interface CodexSessionRuntimeSendTurnInput {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
+  readonly crewId?: CrewId;
   readonly additionalInstructions?: string;
 }
 
@@ -431,6 +433,7 @@ export function resolveCodexSteerReconciliation(
 export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
+  readonly crewId?: CrewId;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "image";
@@ -458,7 +461,13 @@ export function buildTurnStartParams(input: {
   return decodeCodexTurnStartParamsWithCollaborationMode({
     threadId: input.threadId,
     input: buildCodexTurnInput(input),
-    approvalPolicy: config.approvalPolicy,
+    // `untrusted` rejects untrusted MCP calls inside app-server without an
+    // approval request. A crew turn must reach the narrow orchestration MCP
+    // auto-approval hook while retaining the runtime mode's sandbox policy.
+    approvalPolicy:
+      input.crewId !== undefined && config.approvalPolicy === "untrusted"
+        ? "on-request"
+        : config.approvalPolicy,
     approvalsReviewer: config.approvalsReviewer,
     sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
     ...(input.model ? { model: input.model } : {}),
@@ -1946,6 +1955,7 @@ export const makeCodexSessionRuntime = (
             const params = yield* buildTurnStartParams({
               threadId: providerThreadId,
               runtimeMode: options.runtimeMode,
+              ...(input.crewId !== undefined ? { crewId: input.crewId } : {}),
               ...(input.input ? { prompt: input.input } : {}),
               ...(input.attachments ? { attachments: input.attachments } : {}),
               ...(normalizedModel ? { model: normalizedModel } : {}),

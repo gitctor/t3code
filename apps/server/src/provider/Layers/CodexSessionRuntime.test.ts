@@ -4,7 +4,7 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId, TurnId } from "@t3tools/contracts";
+import { CrewId, DEFAULT_MODEL, ThreadId, TurnId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 
@@ -247,6 +247,38 @@ describe("buildTurnStartParams", () => {
       ],
     });
   });
+
+  it.effect("routes supervised crew MCP calls through approval without loosening the sandbox", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "approval-required",
+        crewId: CrewId.make("orchestrator"),
+        prompt: "Dispatch the build seat",
+      });
+
+      NodeAssert.equal(params.approvalPolicy, "on-request");
+      NodeAssert.deepStrictEqual(params.sandboxPolicy, { type: "readOnly" });
+    }),
+  );
+
+  it.effect("keeps supervised non-crew turn policy byte-identical", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "approval-required",
+        prompt: "Inspect the repository",
+      });
+
+      NodeAssert.deepStrictEqual(params, {
+        threadId: "provider-thread-1",
+        approvalPolicy: "untrusted",
+        approvalsReviewer: "user",
+        sandboxPolicy: { type: "readOnly" },
+        input: [{ type: "text", text: "Inspect the repository" }],
+      });
+    }),
+  );
 });
 
 describe("buildTurnSteerParams", () => {

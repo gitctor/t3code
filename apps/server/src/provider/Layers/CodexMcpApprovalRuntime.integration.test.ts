@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ThreadId } from "@t3tools/contracts";
+import { CrewId, ThreadId } from "@t3tools/contracts";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -62,7 +62,10 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
       );
 
       yield* runtime.start();
-      yield* runtime.sendTurn({ input: "Run the crew test flight" });
+      yield* runtime.sendTurn({
+        input: "Run the crew test flight",
+        crewId: CrewId.make("orchestrator"),
+      });
       const events = Array.from(yield* Fiber.join(eventsFiber));
       const approvalRequests = events.filter(
         (event) => event.kind === "request" && event.method === "item/tool/requestUserInput",
@@ -83,11 +86,22 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
       const responses = NodeFS.readFileSync(responsesPath, "utf8")
         .trim()
         .split("\n")
-        .map((line) => JSON.parse(line) as { id: number; result: { answers: unknown } });
-      assert.deepEqual(responses.find((response) => response.id === 101)?.result.answers, {
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              id: number;
+              method?: string;
+              params?: { approvalPolicy?: string; sandboxPolicy?: unknown };
+              result?: { answers: unknown };
+            },
+        );
+      const turnStartRequest = responses.find((response) => response.method === "turn/start");
+      assert.equal(turnStartRequest?.params?.approvalPolicy, "on-request");
+      assert.deepEqual(turnStartRequest?.params?.sandboxPolicy, { type: "readOnly" });
+      assert.deepEqual(responses.find((response) => response.id === 101)?.result?.answers, {
         "mcp_tool_call_approval_mcp-dispatch-approval": { answers: ["Allow"] },
       });
-      assert.deepEqual(responses.find((response) => response.id === 102)?.result.answers, {
+      assert.deepEqual(responses.find((response) => response.id === 102)?.result?.answers, {
         "mcp_tool_call_approval_mcp-preview-approval": { answers: ["Cancel"] },
       });
 

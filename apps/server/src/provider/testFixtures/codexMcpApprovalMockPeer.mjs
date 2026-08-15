@@ -106,6 +106,7 @@ rl.on("line", (line) => {
     return;
   }
   if (method === "turn/start") {
+    NodeFS.appendFileSync(responsesPath, `${JSON.stringify(message)}\n`);
     write({ id, result: { ...fixture.responses.turnStart, turn } });
     write({ jsonrpc: "2.0", method: "turn/started", params: { threadId, turn } });
     startItem(dispatchItem);
