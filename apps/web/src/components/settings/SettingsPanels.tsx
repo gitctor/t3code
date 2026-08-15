@@ -1802,7 +1802,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection title="General">
         <SettingsRow
           {...searchableSetting("messages-while-working")}
-          description="Steer adds the message to the active turn. Queue waits and sends messages one at a time after the current turn finishes. Kimi ACP and unknown providers always use Queue."
+          description="Steer adds the message to the active turn. Queue waits and sends messages one at a time after the current turn finishes. Kimi, Ollama, and unknown providers always use Queue."
           resetAction={
             settings.activeTurnMessageBehavior !== DEFAULT_ACTIVE_TURN_MESSAGE_BEHAVIOR ? (
               <SettingResetButton

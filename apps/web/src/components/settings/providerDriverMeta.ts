@@ -4,6 +4,7 @@ import {
   CursorSettings,
   GrokSettings,
   KimiSettings,
+  OllamaSettings,
   OpenCodeSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
@@ -14,6 +15,7 @@ import {
   GrokIcon,
   type Icon,
   KimiIcon,
+  OllamaIcon,
   OpenAI,
   OpenCodeIcon,
 } from "../Icons";
@@ -76,6 +78,13 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     icon: KimiIcon,
     badgeLabel: "Early Access",
     settingsSchema: KimiSettings,
+  },
+  {
+    value: ProviderDriverKind.make("ollama"),
+    label: "Ollama",
+    icon: OllamaIcon,
+    badgeLabel: "Local — free",
+    settingsSchema: OllamaSettings,
   },
   {
     value: ProviderDriverKind.make("opencode"),

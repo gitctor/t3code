@@ -110,6 +110,7 @@ export function buildOrchestratorTemplate(
     { kind: "codex", role: "build" },
     { kind: "claudeAgent", role: "review" },
     { kind: "kimi", role: "design" },
+    { kind: "ollama", role: "local" },
   ]
     .map(({ kind, role }) => ({ entry: byDriver(kind), role }))
     .filter((candidate): candidate is { entry: ProviderInstanceEntry; role: string } =>

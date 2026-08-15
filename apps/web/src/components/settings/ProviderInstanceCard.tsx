@@ -15,10 +15,10 @@ import * as Result from "effect/Result";
 import { useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
+  ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
-  type ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -787,6 +787,7 @@ export function ProviderInstanceCard({
                 onHiddenModelsChange={onHiddenModelsChange}
                 onFavoriteModelsChange={onFavoriteModelsChange}
                 onModelOrderChange={onModelOrderChange}
+                allowCustomModels={driverKind !== ProviderDriverKind.make("ollama")}
               />
             ) : (
               <div>

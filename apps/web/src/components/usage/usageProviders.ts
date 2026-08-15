@@ -1,6 +1,6 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 
-import { ClaudeAI, type Icon, KimiIcon, OpenAI } from "../Icons";
+import { ClaudeAI, type Icon, KimiIcon, OllamaIcon, OpenAI } from "../Icons";
 
 /**
  * Series and table order. The chart layers both providers from a shared zero
@@ -33,26 +33,30 @@ export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
 };
 
 /** Kimi is visible here even though its ACP stream does not report account limits. */
-export type AccountLimitProviderKind = UsageProviderKind | "kimi";
+export type AccountLimitProviderKind = UsageProviderKind | "kimi" | "ollama";
 
 export const ACCOUNT_LIMIT_PROVIDER_ORDER: readonly AccountLimitProviderKind[] = [
   ...PROVIDER_ORDER,
   "kimi",
+  "ollama",
 ];
 
 export const ACCOUNT_LIMIT_PROVIDER_LABEL: Record<AccountLimitProviderKind, string> = {
   ...PROVIDER_LABEL,
   kimi: "Kimi Code",
+  ollama: "Ollama",
 };
 
 export const ACCOUNT_LIMIT_PROVIDER_COLOR: Record<AccountLimitProviderKind, string> = {
   ...PROVIDER_COLOR,
   kimi: "#1783ff",
+  ollama: "#e6e6e6",
 };
 
 export const ACCOUNT_LIMIT_PROVIDER_MARK: Record<AccountLimitProviderKind, Icon> = {
   ...PROVIDER_MARK,
   kimi: KimiIcon,
+  ollama: OllamaIcon,
 };
 
 export function accountLimitEmptyStateCopy(
@@ -60,6 +64,7 @@ export function accountLimitEmptyStateCopy(
   isLoading: boolean,
 ): string {
   if (provider === "kimi") return "Limits not reported by provider.";
+  if (provider === "ollama") return "Local — free";
   if (isLoading) return "Loading…";
   if (provider === "claude") {
     return "No limit data yet — appears after your first Claude turn.";

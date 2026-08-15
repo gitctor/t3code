@@ -6,7 +6,8 @@ T3 Code is a web and desktop GUI for running coding agents on your machine.
 
 Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the T3 Code server.
 
-At least one provider CLI, installed and authenticated. See [Providers](#providers) below.
+At least one provider CLI installed and authenticated, or a reachable local Ollama server. See
+[Providers](#providers) below.
 
 ## Run Without Installing
 
@@ -43,8 +44,8 @@ yay -S t3code-bin
 
 ## Providers
 
-T3 Code drives provider CLIs; it does not ship them. Install the CLI for each provider you want
-to use, then authenticate it.
+T3 Code drives provider CLIs and can connect directly to a local Ollama server. It does not ship
+either. Set up each provider on the machine where the T3 Code server runs.
 
 | Provider   | CLI                                                         | Default binary | Log in with           |
 | ---------- | ----------------------------------------------------------- | -------------- | --------------------- |
@@ -54,6 +55,7 @@ to use, then authenticate it.
 | Grok Build | [Grok Build CLI](https://x.ai/cli)                          | `grok`         | `grok login`          |
 | Kimi       | [Kimi Code CLI](https://moonshotai.github.io/kimi-code/en/) | `kimi`         | `kimi` then `/login`  |
 | OpenCode   | [OpenCode](https://opencode.ai)                             | `opencode`     | `opencode auth login` |
+| Ollama     | [Ollama](https://ollama.com)                                | —              | Not required          |
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`.
@@ -61,9 +63,13 @@ T3 Code looks for, but authenticate with `agent login`, not `cursor-agent login`
 Run the login command on the machine running the T3 Code server, not on the device you browse
 from.
 
+For Ollama, start the local server and pull at least one model. Then add or enable Ollama in
+**Settings** → **Providers**. T3 Code discovers the server's installed models automatically. The
+default URL is `http://127.0.0.1:11434`; change **Base URL** when Ollama runs elsewhere.
+
 ### Binary Discovery
 
-Each provider CLI must be on the server's `PATH`, or have an explicit binary path set in
+Each CLI-backed provider must be on the server's `PATH`, or have an explicit binary path set in
 **Settings** → the provider instance → **Binary path**. Use the explicit path when a version
 manager or a non-standard install location keeps the CLI off the `PATH` of the shell that
 started T3 Code.

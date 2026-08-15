@@ -211,7 +211,8 @@ export function AccountLimitsHoverCard() {
   return (
     <div className="flex w-64 flex-col gap-2.5 p-1.5">
       {ACCOUNT_LIMIT_PROVIDER_ORDER.map((provider) => {
-        const snapshot = provider === "kimi" ? undefined : snapshots.get(provider);
+        const snapshot =
+          provider === "kimi" || provider === "ollama" ? undefined : snapshots.get(provider);
         const Mark = ACCOUNT_LIMIT_PROVIDER_MARK[provider];
         return (
           <div key={provider} className="flex flex-col gap-1">
@@ -272,7 +273,8 @@ export function AccountLimitsSection() {
       <h2 className="text-sm font-medium text-foreground">Limits</h2>
       <div className="grid gap-x-12 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
         {ACCOUNT_LIMIT_PROVIDER_ORDER.map((provider) => {
-          const snapshot = provider === "kimi" ? undefined : snapshots.get(provider);
+          const snapshot =
+            provider === "kimi" || provider === "ollama" ? undefined : snapshots.get(provider);
           const Mark = ACCOUNT_LIMIT_PROVIDER_MARK[provider];
           return (
             <div key={provider} className="flex flex-col gap-1.5">

@@ -223,6 +223,24 @@ export const KimiIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+/** Ollama llama mark for local-model provider surfaces. */
+export const OllamaIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={cn("text-[#111111] dark:text-[#F5F5F5]", className)}
+  >
+    <path d="M7 20v-8.5L5.5 9V4.5L9 7l1.2-3h3.6L15 7l3.5-2.5V9L17 11.5V20" />
+    <path d="M7 12c1.5-1 3.1-1.5 5-1.5s3.5.5 5 1.5" />
+    <path d="M9.25 14.25h.01M14.75 14.25h.01M10 17.25c1.3.7 2.7.7 4 0" />
+  </svg>
+);
+
 export const TraeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 24 24" fill="currentColor">
     {/* Back rectangle: left strip + bottom strip drawn separately — empty bottom-left corner is the gap between them */}
