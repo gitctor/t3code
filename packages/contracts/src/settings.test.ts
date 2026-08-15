@@ -108,7 +108,7 @@ describe("ClientSettings messages while working", () => {
     },
   );
 
-  it.each(["kimi", "custom-driver"])("falls back to queue for %s", (driverKind) => {
+  it.each(["kimi", "ollama", "custom-driver"])("falls back to queue for %s", (driverKind) => {
     const driver = ProviderDriverKind.make(driverKind);
     expect(providerSupportsActiveTurnSteer(driver)).toBe(false);
     expect(resolveActiveTurnMessageBehavior("steer", driver)).toBe("queue");
@@ -172,6 +172,10 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.ollama).toEqual({
+      enabled: true,
+      baseUrl: "http://127.0.0.1:11434",
+    });
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -199,8 +203,8 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
     expect(decoded.providerInstances[personalId]?.driver).toBe("codex");
     expect(decoded.providerInstances[workId]?.config).toEqual({ homePath: "~/.codex_work" });
-    // Critical: a config naming a driver this build does not know about
-    // (`ollama` is not in `ProviderDriverKind`) must round-trip without loss.
+    // Critical: arbitrary instance envelopes must round-trip without loss,
+    // including a non-default id for the built-in Ollama driver.
     // The runtime handles "driver not installed" — the schema must not.
     expect(decoded.providerInstances[ollamaId]?.driver).toBe("ollama");
     expect(decoded.providerInstances[ollamaId]?.config).toEqual({

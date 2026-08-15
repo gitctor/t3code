@@ -132,6 +132,7 @@ const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const KIMI_DRIVER_KIND = ProviderDriverKind.make("kimi");
+const OLLAMA_DRIVER_KIND = ProviderDriverKind.make("ollama");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
@@ -154,6 +155,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CURSOR_DRIVER_KIND]: "auto",
   [GROK_DRIVER_KIND]: "grok-build",
   [KIMI_DRIVER_KIND]: "kimi-code/kimi-for-coding",
+  [OLLAMA_DRIVER_KIND]: "qwen3.6:35b-mlx",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
 
@@ -165,6 +167,7 @@ export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
   [CURSOR_DRIVER_KIND]: "composer-2",
   [KIMI_DRIVER_KIND]: "kimi-code/kimi-for-coding",
+  [OLLAMA_DRIVER_KIND]: "qwen3.6:35b-mlx",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
 
@@ -221,6 +224,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "kimi-for-coding-highspeed": "kimi-code/kimi-for-coding-highspeed",
     "kimi-k2.5": "kimi-code/kimi-for-coding",
   },
+  [OLLAMA_DRIVER_KIND]: {},
   [OPENCODE_DRIVER_KIND]: {},
 };
 
@@ -232,5 +236,6 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
   [KIMI_DRIVER_KIND]: "Kimi",
+  [OLLAMA_DRIVER_KIND]: "Ollama",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
 };

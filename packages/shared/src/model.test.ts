@@ -199,6 +199,11 @@ describe("cheapest chat model resolution", () => {
       ],
       expected: "kimi-code/kimi-for-coding-highspeed",
     },
+    {
+      driver: "ollama",
+      models: [catalogModel("qwen3.6:27b-mlx"), catalogModel("qwen3.6:35b-mlx", true)],
+      expected: "qwen3.6:35b-mlx",
+    },
   ])("uses the $driver preference table", ({ driver, models, expected }) => {
     expect(resolveCheapestChatModel({ driver: ProviderDriverKind.make(driver), models })).toBe(
       expected,
