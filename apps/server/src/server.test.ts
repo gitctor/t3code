@@ -6288,7 +6288,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   );
 
   effectIt.live(
-    "exposes orchestration MCP tools before fresh Codex and Claude planner adapters boot",
+    "exposes orchestration MCP tools for 10 consecutive Codex crew starts and fresh Claude boot",
     () =>
       Effect.gen(function* () {
         const now = "2026-08-14T13:00:00.000Z";
@@ -6406,55 +6406,67 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     },
                   });
 
-                  yield* harness.adapterHarness!.queueTurnResponseForNextSession(
-                    turnResponse("crew"),
-                  );
-                  const crewThreadId = ThreadId.make(`${plannerCase.label}-crew-tools-thread`);
-                  yield* harness.engine.dispatch({
-                    type: "thread.create",
-                    commandId: CommandId.make(`${plannerCase.label}-crew-thread-create`),
-                    threadId: crewThreadId,
-                    projectId: defaultProjectId,
-                    title: `${plannerCase.label} crew tools`,
-                    modelSelection,
-                    interactionMode: "default",
-                    runtimeMode: "approval-required",
-                    branch: "main",
-                    worktreePath: harness.workspaceDir,
-                    createdAt: now,
-                  });
-                  yield* harness.engine.dispatch({
-                    type: "thread.turn.start",
-                    commandId: CommandId.make(`${plannerCase.label}-crew-turn`),
-                    threadId: crewThreadId,
-                    message: {
-                      messageId: MessageId.make(`${plannerCase.label}-crew-message`),
-                      role: "user",
-                      text: "Run the crew test flight.",
-                      attachments: [],
-                    },
-                    modelSelection,
-                    interactionMode: "default",
-                    runtimeMode: "approval-required",
-                    crewId: crew.id,
-                    createdAt: now,
-                  });
-                  yield* harness.waitForReceipt(
-                    (receipt) =>
-                      receipt.type === "turn.processing.quiesced" &&
-                      receipt.threadId === crewThreadId,
-                  );
+                  const crewTurnCount = plannerCase.label === "codex" ? 10 : 1;
+                  for (let turnIndex = 1; turnIndex <= crewTurnCount; turnIndex += 1) {
+                    const suffix = `crew-${turnIndex}`;
+                    yield* harness.adapterHarness!.queueTurnResponseForNextSession(
+                      turnResponse(suffix),
+                    );
+                    const crewThreadId = ThreadId.make(
+                      `${plannerCase.label}-crew-tools-thread-${turnIndex}`,
+                    );
+                    yield* harness.engine.dispatch({
+                      type: "thread.create",
+                      commandId: CommandId.make(
+                        `${plannerCase.label}-crew-thread-create-${turnIndex}`,
+                      ),
+                      threadId: crewThreadId,
+                      projectId: defaultProjectId,
+                      title: `${plannerCase.label} crew tools ${turnIndex}`,
+                      modelSelection,
+                      interactionMode: "default",
+                      runtimeMode: "approval-required",
+                      branch: "main",
+                      worktreePath: harness.workspaceDir,
+                      createdAt: now,
+                    });
+                    yield* harness.engine.dispatch({
+                      type: "thread.turn.start",
+                      commandId: CommandId.make(`${plannerCase.label}-crew-turn-${turnIndex}`),
+                      threadId: crewThreadId,
+                      message: {
+                        messageId: MessageId.make(`${plannerCase.label}-crew-message-${turnIndex}`),
+                        role: "user",
+                        text: "Run the crew test flight.",
+                        attachments: [],
+                      },
+                      modelSelection,
+                      interactionMode: "default",
+                      runtimeMode: "approval-required",
+                      crewId: crew.id,
+                      createdAt: now,
+                    });
+                    yield* harness.waitForReceipt(
+                      (receipt) =>
+                        receipt.type === "turn.processing.quiesced" &&
+                        receipt.threadId === crewThreadId,
+                    );
 
-                  const crewCatalog = bootCatalogs.find(
-                    (catalog) => catalog.input.threadId === crewThreadId,
-                  );
-                  assert.isDefined(crewCatalog);
-                  assert.equal(crewCatalog.input.crewId, crew.id);
-                  assert.deepEqual(
-                    ["dispatch", "await_dispatch", "list_dispatches"].filter(
-                      (toolName) => !crewCatalog.toolNames.includes(toolName),
-                    ),
-                    [],
+                    const crewCatalog = bootCatalogs.find(
+                      (catalog) => catalog.input.threadId === crewThreadId,
+                    );
+                    assert.isDefined(crewCatalog);
+                    assert.equal(crewCatalog.input.crewId, crew.id);
+                    assert.deepEqual(
+                      ["dispatch", "await_dispatch", "list_dispatches"].filter(
+                        (toolName) => !crewCatalog.toolNames.includes(toolName),
+                      ),
+                      [],
+                    );
+                  }
+                  assert.lengthOf(
+                    bootCatalogs.filter((catalog) => catalog.input.crewId === crew.id),
+                    crewTurnCount,
                   );
 
                   const crewlessThreadId = ThreadId.make(

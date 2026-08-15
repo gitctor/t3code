@@ -57,6 +57,8 @@ import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
+  CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
+  CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
   makeCodexSessionRuntime,
@@ -779,6 +781,18 @@ function mapToRuntimeEvents(
         payload: {
           message: event.message,
           class: "provider_error",
+          ...(event.payload !== undefined ? { detail: event.payload } : {}),
+        },
+      },
+    ];
+  }
+  if (event.method === CODEX_CREW_MCP_CATALOG_WARNING_METHOD) {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "runtime.warning",
+        payload: {
+          message: event.message ?? CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
           ...(event.payload !== undefined ? { detail: event.payload } : {}),
         },
       },

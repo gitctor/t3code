@@ -11,7 +11,11 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { assert, describe } from "vite-plus/test";
 
-import { makeCodexSessionRuntime } from "./CodexSessionRuntime.ts";
+import {
+  CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
+  CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
+  makeCodexSessionRuntime,
+} from "./CodexSessionRuntime.ts";
 
 const peerPath = NodePath.join(import.meta.dirname, "../testFixtures/codexMcpApprovalMockPeer.sh");
 
@@ -36,6 +40,12 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
           ...process.env,
           T3_CODEX_MCP_APPROVAL_RESPONSES: responsesPath,
         },
+        appServerArgs: [
+          "-c",
+          "mcp_servers.t3-code.url=http://127.0.0.1:43123/mcp",
+          "-c",
+          'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+        ],
         shouldAutoApproveMcpToolCall: (serverName, toolName) =>
           serverName === "t3-code" &&
           (toolName === "dispatch" ||
@@ -96,6 +106,10 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
             },
         );
       const turnStartRequest = responses.find((response) => response.method === "turn/start");
+      assert.lengthOf(
+        responses.filter((response) => response.method === "config/mcpServer/reload"),
+        0,
+      );
       assert.equal(turnStartRequest?.params?.approvalPolicy, "on-request");
       assert.deepEqual(turnStartRequest?.params?.sandboxPolicy, { type: "readOnly" });
       assert.deepEqual(responses.find((response) => response.id === 101)?.result?.answers, {
@@ -104,6 +118,79 @@ describe("CodexSessionRuntime crew MCP approvals", () => {
       assert.deepEqual(responses.find((response) => response.id === 102)?.result?.answers, {
         "mcp_tool_call_approval_mcp-preview-approval": { answers: ["Cancel"] },
       });
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("warns at first output when a crew turn lacks the orchestration catalog", () =>
+    Effect.gen(function* () {
+      const responsesPath = NodePath.join(
+        NodeOS.tmpdir(),
+        `t3-codex-mcp-catalog-${process.pid}.ndjson`,
+      );
+      NodeFS.rmSync(responsesPath, { force: true });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => NodeFS.rmSync(responsesPath, { force: true })),
+      );
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-mcp-catalog-missing"),
+        binaryPath: peerPath,
+        cwd: "/tmp",
+        runtimeMode: "approval-required",
+        environment: {
+          ...process.env,
+          T3_CODEX_MCP_APPROVAL_RESPONSES: responsesPath,
+          T3_CODEX_MCP_CATALOG_MODE: "missing",
+        },
+        appServerArgs: [
+          "-c",
+          "mcp_servers.t3-code.url=http://127.0.0.1:43123/mcp",
+          "-c",
+          'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+        ],
+      });
+      const eventsFiber = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.method === "turn/completed"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({
+        input: "Run the crew test flight",
+        crewId: CrewId.make("orchestrator"),
+      });
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const warningIndex = events.findIndex(
+        (event) => event.method === CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
+      );
+      const firstOutputIndex = events.findIndex(
+        (event) => event.method === "item/agentMessage/delta",
+      );
+      assert.isAtLeast(warningIndex, 0);
+      assert.isAtLeast(firstOutputIndex, 0);
+      assert.isBelow(warningIndex, firstOutputIndex);
+      assert.equal(events[warningIndex]?.message, CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE);
+      assert.deepEqual(events[warningIndex]?.payload, {
+        serverPresent: true,
+        observedToolNames: ["preview_status"],
+        missingToolNames: ["dispatch", "await_dispatch", "list_dispatches"],
+      });
+
+      const requests = NodeFS.readFileSync(responsesPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { method?: string });
+      assert.lengthOf(
+        requests.filter((request) => request.method === "config/mcpServer/reload"),
+        0,
+      );
+      assert.lengthOf(
+        requests.filter((request) => request.method === "mcpServerStatus/list"),
+        1,
+      );
 
       yield* runtime.close;
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

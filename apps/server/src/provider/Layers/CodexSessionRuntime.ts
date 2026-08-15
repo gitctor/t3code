@@ -39,6 +39,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import {
+  ORCHESTRATION_MCP_TOOL_NAMES,
+  T3_CODE_MCP_SERVER_NAME,
+} from "../../mcp/OrchestrationMcpPolicy.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
@@ -62,8 +66,30 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "does not exist",
 ];
 
-export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | undefined): boolean {
-  return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
+export const CODEX_CREW_MCP_CATALOG_WARNING_METHOD = "t3/crewMcpCatalogMissing";
+export const CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE =
+  "Crew turn reached its first assistant token without all orchestration tools in the Codex catalog.";
+
+export interface CodexCrewMcpCatalogAudit {
+  readonly serverPresent: boolean;
+  readonly observedToolNames: ReadonlyArray<string>;
+  readonly missingToolNames: ReadonlyArray<(typeof ORCHESTRATION_MCP_TOOL_NAMES)[number]>;
+}
+
+export function auditCodexCrewMcpCatalog(
+  response: EffectCodexSchema.V2ListMcpServerStatusResponse,
+): CodexCrewMcpCatalogAudit {
+  const server = response.data.find((candidate) => candidate.name === T3_CODE_MCP_SERVER_NAME);
+  const observedToolNames = server
+    ? Array.from(new Set(Object.values(server.tools).map((tool) => tool.name))).sort()
+    : [];
+  return {
+    serverPresent: server !== undefined,
+    observedToolNames,
+    missingToolNames: ORCHESTRATION_MCP_TOOL_NAMES.filter(
+      (toolName) => !observedToolNames.includes(toolName),
+    ),
+  };
 }
 
 export const CodexResumeCursorSchema = Schema.Struct({
@@ -928,6 +954,9 @@ export const makeCodexSessionRuntime = (
     const activeMcpToolCallsRef = yield* Ref.make(
       new Map<string, { readonly serverName: string; readonly toolName: string }>(),
     );
+    const pendingCrewMcpCatalogAuditRef = yield* Ref.make<
+      { readonly providerThreadId: string } | undefined
+    >(undefined);
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const collabChildAgentsRef = yield* Ref.make(new Map<string, CollabChildAgentState>());
     /** Child provider-thread id → its currently running provider turn id. */
@@ -1428,6 +1457,41 @@ export const makeCodexSessionRuntime = (
           }
         }
 
+        if (notification.method === "item/agentMessage/delta") {
+          const pendingAudit = yield* Ref.getAndSet(pendingCrewMcpCatalogAuditRef, undefined);
+          if (pendingAudit !== undefined) {
+            const audit = yield* client
+              .request("mcpServerStatus/list", {
+                detail: "toolsAndAuthOnly",
+                limit: 100,
+                threadId: pendingAudit.providerThreadId,
+              })
+              .pipe(
+                Effect.map(auditCodexCrewMcpCatalog),
+                Effect.catch((cause) =>
+                  Effect.logWarning("Failed to inspect the Codex crew MCP catalog.", {
+                    cause,
+                    threadId: options.threadId,
+                  }).pipe(Effect.as(undefined)),
+                ),
+              );
+            if (audit !== undefined && audit.missingToolNames.length > 0) {
+              yield* Effect.logWarning(CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE, {
+                threadId: options.threadId,
+                ...audit,
+              });
+              yield* emitEvent({
+                kind: "notification",
+                threadId: options.threadId,
+                method: CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
+                message: CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
+                ...(turnId ? { turnId } : {}),
+                payload: audit,
+              });
+            }
+          }
+        }
+
         yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
         yield* emitEvent({
           kind: "notification",
@@ -1874,15 +1938,6 @@ export const makeCodexSessionRuntime = (
         sendTurnSemaphore.withPermits(1)(
           Effect.gen(function* () {
             const providerThreadId = yield* readProviderThreadId;
-            if (hasConfiguredMcpServer(options.appServerArgs)) {
-              yield* client.request("config/mcpServer/reload", undefined).pipe(
-                Effect.catch((cause) =>
-                  Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
-                    cause,
-                  }),
-                ),
-              );
-            }
             const session = yield* Ref.get(sessionRef);
             const steeringTurnId = resolveCodexSteeringTurnId(session);
             if (steeringTurnId) {
@@ -1966,6 +2021,10 @@ export const makeCodexSessionRuntime = (
                 ? { additionalInstructions: input.additionalInstructions }
                 : {}),
             });
+            yield* Ref.set(
+              pendingCrewMcpCatalogAuditRef,
+              input.crewId === undefined ? undefined : { providerThreadId },
+            );
             const rawResponse = yield* client.raw.request("turn/start", params);
             const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
               Effect.mapError((error) =>

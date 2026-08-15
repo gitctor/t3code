@@ -43,6 +43,8 @@ import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import {
+  CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
+  CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
@@ -901,6 +903,42 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         firstEvent.value.payload.message,
         "The filename or extension is too long. (os error 206)",
       );
+    }),
+  );
+
+  it.effect("maps a missing crew MCP catalog to a runtime warning", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+      const detail = {
+        serverPresent: true,
+        observedToolNames: ["preview_status"],
+        missingToolNames: ["dispatch", "await_dispatch", "list_dispatches"],
+      };
+
+      yield* runtime.emit({
+        id: asEventId("evt-crew-mcp-catalog-missing"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: CODEX_CREW_MCP_CATALOG_WARNING_METHOD,
+        turnId: asTurnId("turn-1"),
+        message: CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE,
+        payload: detail,
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "runtime.warning");
+      if (firstEvent.value.type === "runtime.warning") {
+        NodeAssert.equal(firstEvent.value.turnId, "turn-1");
+        NodeAssert.equal(firstEvent.value.payload.message, CODEX_CREW_MCP_CATALOG_WARNING_MESSAGE);
+        NodeAssert.deepEqual(firstEvent.value.payload.detail, detail);
+      }
     }),
   );
 

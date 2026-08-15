@@ -15,9 +15,9 @@ import {
 } from "../CodexDeveloperInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
+  auditCodexCrewMcpCatalog,
   buildTurnSteerParams,
   buildTurnStartParams,
-  hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
   resolveCodexSteerReconciliation,
@@ -418,14 +418,58 @@ describe("T3 browser developer instructions", () => {
   });
 });
 
-describe("hasConfiguredMcpServer", () => {
-  it("detects inline Codex MCP configuration arguments", () => {
-    NodeAssert.equal(hasConfiguredMcpServer(undefined), false);
-    NodeAssert.equal(hasConfiguredMcpServer(["--model", "gpt-5.4"]), false);
-    NodeAssert.equal(
-      hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
-      true,
-    );
+describe("auditCodexCrewMcpCatalog", () => {
+  const tool = (name: string) => ({ name, inputSchema: {} });
+
+  it("reports the exact orchestration tools missing from the Codex catalog", () => {
+    const audit = auditCodexCrewMcpCatalog({
+      data: [
+        {
+          authStatus: "bearerToken",
+          name: "t3-code",
+          resourceTemplates: [],
+          resources: [],
+          tools: {
+            preview_status: { name: "preview_status", inputSchema: {} },
+            dispatch: { name: "dispatch", inputSchema: {} },
+          },
+        },
+      ],
+    });
+
+    NodeAssert.deepStrictEqual(audit, {
+      serverPresent: true,
+      observedToolNames: ["dispatch", "preview_status"],
+      missingToolNames: ["await_dispatch", "list_dispatches"],
+    });
+  });
+
+  it("reports all orchestration tools when the t3-code server is absent", () => {
+    NodeAssert.deepStrictEqual(auditCodexCrewMcpCatalog({ data: [] }), {
+      serverPresent: false,
+      observedToolNames: [],
+      missingToolNames: ["dispatch", "await_dispatch", "list_dispatches"],
+    });
+  });
+
+  it("accepts a complete orchestration catalog", () => {
+    const audit = auditCodexCrewMcpCatalog({
+      data: [
+        {
+          authStatus: "bearerToken",
+          name: "t3-code",
+          resourceTemplates: [],
+          resources: [],
+          tools: {
+            dispatch: tool("dispatch"),
+            await_dispatch: tool("await_dispatch"),
+            list_dispatches: tool("list_dispatches"),
+          },
+        },
+      ],
+    });
+
+    NodeAssert.deepStrictEqual(audit.missingToolNames, []);
   });
 });
 

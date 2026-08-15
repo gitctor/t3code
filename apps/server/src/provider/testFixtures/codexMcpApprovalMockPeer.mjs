@@ -9,6 +9,7 @@ const fixture = JSON.parse(
   NodeFS.readFileSync(NodePath.join(here, "codexMultiAgentWire.json"), "utf8"),
 );
 const responsesPath = process.env.T3_CODEX_MCP_APPROVAL_RESPONSES;
+const catalogMode = process.env.T3_CODEX_MCP_CATALOG_MODE ?? "complete";
 const threadId = fixture.rootThreadId;
 const turn = { ...fixture.responses.turnStart.turn, id: "turn-mcp-approval" };
 const dispatchItem = {
@@ -55,6 +56,7 @@ const startItem = (item) =>
     method: "item/started",
     params: { threadId, turnId: turn.id, startedAtMs: 1, item },
   });
+const mcpTool = (name) => ({ name, inputSchema: { type: "object" } });
 
 const rl = NodeReadline.createInterface({ input: process.stdin });
 rl.on("line", (line) => {
@@ -65,8 +67,10 @@ rl.on("line", (line) => {
     return;
   }
   const { id, method } = message;
-  if (method === undefined && (id === 101 || id === 102)) {
+  if (responsesPath) {
     NodeFS.appendFileSync(responsesPath, `${JSON.stringify(message)}\n`);
+  }
+  if (method === undefined && (id === 101 || id === 102)) {
     if (id === 101) {
       write({
         jsonrpc: "2.0",
@@ -105,10 +109,48 @@ rl.on("line", (line) => {
     write({ id, result: fixture.responses.threadStart });
     return;
   }
+  if (method === "mcpServerStatus/list") {
+    const toolNames =
+      catalogMode === "missing"
+        ? ["preview_status"]
+        : ["preview_status", "dispatch", "await_dispatch", "list_dispatches"];
+    write({
+      id,
+      result: {
+        data: [
+          {
+            authStatus: "bearerToken",
+            name: "t3-code",
+            resourceTemplates: [],
+            resources: [],
+            tools: Object.fromEntries(toolNames.map((name) => [name, mcpTool(name)])),
+          },
+        ],
+      },
+    });
+    return;
+  }
   if (method === "turn/start") {
-    NodeFS.appendFileSync(responsesPath, `${JSON.stringify(message)}\n`);
     write({ id, result: { ...fixture.responses.turnStart, turn } });
     write({ jsonrpc: "2.0", method: "turn/started", params: { threadId, turn } });
+    if (catalogMode === "missing") {
+      write({
+        jsonrpc: "2.0",
+        method: "item/agentMessage/delta",
+        params: {
+          threadId,
+          turnId: turn.id,
+          itemId: "agent-message-catalog-missing",
+          delta: "The orchestration tools are not exposed.",
+        },
+      });
+      write({
+        jsonrpc: "2.0",
+        method: "turn/completed",
+        params: { threadId, turn: { ...turn, status: "completed" } },
+      });
+      return;
+    }
     startItem(dispatchItem);
     requestApproval(101, dispatchItem);
     return;
