@@ -1,6 +1,6 @@
 # Final QA and daily-driver install report
 
-Date: 2026-08-15
+Date: 2026-08-16
 Branch: `build/crew-suite`
 Shipped implementation HEAD: `18ca244198c0c8f4804f09fef1da366817485b61`
 
@@ -22,9 +22,8 @@ live ACP startup check timed out after 15 seconds. I did not repair or reconfigu
 - Working tree: clean before QA.
 - Branch: `build/crew-suite`.
 - Shipped implementation HEAD: exactly matches `origin/build/crew-suite` after a fresh fetch.
-- Starting local HEAD: one report-only commit ahead of the remote implementation. It was the
-  previous required local-only `.plans/final-qa-and-install-report.md` commit. No implementation
-  code was unpushed.
+- Starting local HEAD: two report-only commits ahead of the remote implementation. Both changed
+  only `.plans/final-qa-and-install-report.md`. No implementation code was unpushed.
 - Merge, rebase, cherry-pick, and revert state: none.
 - Linked review worktree: clean and detached at the shipped implementation HEAD.
 - Pending `.plans` edits before this report: none.
@@ -110,24 +109,24 @@ No separate Ollama or settings migration exists. Those additions use the decoded
 
 ### Process safety and app shutdown
 
-- T3 Code root PID before quit: `48716`.
+- T3 Code root PID before quit: `61206`.
+- T3 Code server PID before quit: `61274`.
 - T3-owned Claude, Codex, Kimi, or Ollama CLI children: zero.
 - Live database turn states before quit: 475 completed, 1 interrupted, 0 active.
 - Independent `ollama serve` PID `2095` remained running throughout.
-- AppleScript graceful quit did not complete within 60 seconds.
-- After the authorized timeout, I used `kill -9` on the captured and revalidated T3 root PID
-  `48716` only.
-- The server and resource monitor remained reparented, so I used `kill -9` on the captured and
-  revalidated T3 PIDs `48768` and `48787`.
+- AppleScript graceful quit failed with `AppleEvent timed out. (-1712)`. The app remained alive
+  for more than 60 seconds.
+- After the authorized timeout, I revalidated and used `kill -9` only on T3 bundle PIDs `61206`,
+  `61242`, `61243`, `61274`, `61292`, and `61340`.
 - All T3 app-bundle processes then exited. No other process was signaled.
 
 ### Installation
 
 1. Mounted the DMG read-only at `/dev/disk4`.
 2. Confirmed the mounted app was `0.0.34-crew.3` and arm64.
-3. Staged a complete copy in `/Applications`.
+3. Staged and validated a complete copy under `/tmp`.
 4. Moved the prior installed app to
-   `/Users/victorfreyre/.Trash/T3 Code (Alpha) 0.0.34-crew.3 pre-reinstall-20260815-2348.app`.
+   `/Users/victorfreyre/.Trash/T3 Code (Alpha) 0.0.34-crew.3 pre-reinstall-20260816-000122.app`.
 5. Moved the staged bundle into `/Applications/T3 Code (Alpha).app`.
 6. Detached `/dev/disk4` successfully.
 7. Cleared `com.apple.quarantine` recursively and confirmed the attribute is absent.
@@ -138,10 +137,10 @@ No separate Ollama or settings migration exists. Those additions use the decoded
 ### App and server
 
 - Installed version: `0.0.34-crew.3`.
-- App root PID at verification: `61206`.
-- Server PID at verification: `61274`.
+- App root PID at verification: `72060`.
+- Server PID at verification: `72123`.
 - Runtime origin: `http://127.0.0.1:3773`.
-- Listener proof: server PID `61274` owns TCP `*:3773` in `LISTEN` state.
+- Listener proof: server PID `72123` owns TCP `*:3773` in `LISTEN` state.
 - HTTP proof: the origin returned the installed T3 web shell.
 
 ### Real userdata migration and counts
@@ -194,12 +193,12 @@ if osascript -e 'application "T3 Code (Alpha)" is running' | grep -q true; then
   echo 'T3 Code is still running. Stop it before restoring the database.' >&2
   exit 1
 fi
-mv '/Users/victorfreyre/.t3/userdata/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite.before-crew3-restore-20260815-finalqa'
+mv '/Users/victorfreyre/.t3/userdata/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite.before-crew3-restore-20260816-finalqa'
 if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' ]; then
-  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' '/Users/victorfreyre/.t3/userdata/state.sqlite-wal.before-crew3-restore-20260815-finalqa'
+  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' '/Users/victorfreyre/.t3/userdata/state.sqlite-wal.before-crew3-restore-20260816-finalqa'
 fi
 if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' ]; then
-  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' '/Users/victorfreyre/.t3/userdata/state.sqlite-shm.before-crew3-restore-20260815-finalqa'
+  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' '/Users/victorfreyre/.t3/userdata/state.sqlite-shm.before-crew3-restore-20260816-finalqa'
 fi
 cp '/Users/victorfreyre/Documents/t3code-backup-20260815-224902/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite'
 sqlite3 -readonly '/Users/victorfreyre/.t3/userdata/state.sqlite' 'PRAGMA integrity_check;'
