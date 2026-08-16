@@ -1,10 +1,11 @@
 /**
- * Account rate-limit views: the sidebar hover card and the usage page's
- * "Limits" strip. Both render whatever windows the server reports, so a
+ * Account rate-limit views: the composer capacity cluster, the sidebar
+ * hover card, and the usage page's "Limits" strip. They render whatever
+ * windows the server reports, so a
  * window a provider adds or brings back (Codex's paused 5-hour) appears
  * without a client change.
  *
- * Every percentage is labelled `used` inline - a bare number cannot say
+ * Every percentage is labelled `left` inline - a bare number cannot say
  * whether it is used or remaining. Snapshot age only renders once the data
  * is actually stale; fresh data needs no caption.
  *
@@ -44,16 +45,19 @@ function useRefreshLimitsOnMount(refresh: () => void) {
   }, []);
 }
 
-function usageTone(usedPercent: number): string | undefined {
-  if (usedPercent >= 95) return "text-red-400";
-  if (usedPercent >= 80) return "text-amber-400";
-  return undefined;
+export function accountLimitPercentLeft(usedPercent: number): number {
+  if (!Number.isFinite(usedPercent)) return 0;
+  return Math.min(100, Math.max(0, 100 - usedPercent));
 }
 
-function remainingTone(usedPercent: number): string {
-  if (usedPercent >= 95) return "text-red-400";
-  if (usedPercent >= 80) return "text-amber-400";
-  return "text-sidebar-foreground/70";
+export function formatAccountLimitPercentLeft(usedPercent: number): string {
+  return `${Math.round(accountLimitPercentLeft(usedPercent))}% left`;
+}
+
+function remainingTone(percentLeft: number): string {
+  if (percentLeft <= 5) return "text-red-400";
+  if (percentLeft <= 20) return "text-amber-400";
+  return "text-foreground/70";
 }
 
 function compactWindowLabel(window: AccountLimitsWindow): string {
@@ -64,12 +68,13 @@ function compactWindowLabel(window: AccountLimitsWindow): string {
 }
 
 function LimitMeter({ window, color }: { window: AccountLimitsWindow; color: string }) {
+  const percentLeft = accountLimitPercentLeft(window.usedPercent);
   return (
     <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
       <div
         className="h-full rounded-full"
         style={{
-          width: `${Math.min(100, Math.max(0, window.usedPercent))}%`,
+          width: `${percentLeft}%`,
           backgroundColor: color,
         }}
       />
@@ -86,17 +91,17 @@ function SnapshotAge({ snapshot, nowMs }: { snapshot: AccountLimitsSnapshot; now
   );
 }
 
-/** Always-visible remaining capacity beside the sidebar's Usage label. */
-export function AccountLimitsSidebarGauges() {
+/** Remaining provider capacity beside the chat context-window meter. */
+export function AccountLimitsComposerGauges() {
   const { readAtMs, snapshots } = useAccountLimits();
 
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1.5 group-data-[collapsible=icon]:hidden">
+    <span className="flex shrink-0 items-center gap-0.5">
       {PROVIDER_ORDER.map((provider) => {
         const snapshot = snapshots.get(provider);
         if (snapshot === undefined || snapshot.windows.length === 0) return null;
         return (
-          <AccountLimitsSidebarGauge
+          <AccountLimitsComposerGauge
             key={provider}
             nowMs={readAtMs}
             provider={provider}
@@ -108,7 +113,7 @@ export function AccountLimitsSidebarGauges() {
   );
 }
 
-function AccountLimitsSidebarGauge({
+function AccountLimitsComposerGauge({
   nowMs,
   provider,
   snapshot,
@@ -122,7 +127,7 @@ function AccountLimitsSidebarGauge({
   const ariaLabel = `${PROVIDER_LABEL[provider]}: ${windows
     .map(
       (window) =>
-        `${compactWindowLabel(window)} ${Math.round(100 - window.usedPercent)} percent remaining`,
+        `${compactWindowLabel(window)} ${Math.round(accountLimitPercentLeft(window.usedPercent))} percent left`,
     )
     .join(", ")}`;
 
@@ -140,7 +145,7 @@ function AccountLimitsSidebarGauge({
         <svg aria-hidden="true" className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 32 32">
           {windows.map((window, index) => {
             const radius = index === 0 ? 13.5 : 10;
-            const remainingPercent = Math.min(100, Math.max(0, 100 - window.usedPercent));
+            const percentLeft = accountLimitPercentLeft(window.usedPercent);
             return (
               <g key={window.id}>
                 <circle
@@ -153,16 +158,16 @@ function AccountLimitsSidebarGauge({
                   stroke="currentColor"
                   strokeWidth="2"
                 />
-                {remainingPercent > 0 ? (
+                {percentLeft > 0 ? (
                   <circle
-                    className={remainingTone(window.usedPercent)}
+                    className={remainingTone(percentLeft)}
                     cx="16"
                     cy="16"
                     fill="none"
                     pathLength="100"
                     r={radius}
                     stroke="currentColor"
-                    strokeDasharray={`${remainingPercent} ${100 - remainingPercent}`}
+                    strokeDasharray={`${percentLeft} ${100 - percentLeft}`}
                     strokeLinecap="round"
                     strokeWidth="2"
                   />
@@ -181,8 +186,13 @@ function AccountLimitsSidebarGauge({
               <span className="text-muted-foreground">
                 {index === 0 ? "Outer" : "Inner"} · {compactWindowLabel(window)}
               </span>
-              <span className={cn("font-medium tabular-nums", remainingTone(window.usedPercent))}>
-                {Math.round(100 - window.usedPercent)}% remaining
+              <span
+                className={cn(
+                  "font-medium tabular-nums",
+                  remainingTone(accountLimitPercentLeft(window.usedPercent)),
+                )}
+              >
+                {formatAccountLimitPercentLeft(window.usedPercent)}
               </span>
               <span className="col-span-2 text-[10px] text-muted-foreground/80">
                 {formatSidebarResetAt(window.resetsAt, nowMs)}
@@ -240,11 +250,11 @@ export function AccountLimitsHoverCard() {
                   <LimitMeter window={window} color={ACCOUNT_LIMIT_PROVIDER_COLOR[provider]} />
                   <span
                     className={cn(
-                      "shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums text-foreground",
-                      usageTone(window.usedPercent),
+                      "shrink-0 whitespace-nowrap text-right text-[11px] tabular-nums",
+                      remainingTone(accountLimitPercentLeft(window.usedPercent)),
                     )}
                   >
-                    {Math.round(window.usedPercent)}% used
+                    {formatAccountLimitPercentLeft(window.usedPercent)}
                   </span>
                   <span className="shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-muted-foreground">
                     {formatResetAt(window.resetsAt, readAtMs) ?? ""}
@@ -304,11 +314,11 @@ export function AccountLimitsSection() {
                       <LimitMeter window={window} color={ACCOUNT_LIMIT_PROVIDER_COLOR[provider]} />
                       <span
                         className={cn(
-                          "shrink-0 whitespace-nowrap text-right text-xs font-medium tabular-nums text-foreground",
-                          usageTone(window.usedPercent),
+                          "shrink-0 whitespace-nowrap text-right text-xs font-medium tabular-nums",
+                          remainingTone(accountLimitPercentLeft(window.usedPercent)),
                         )}
                       >
-                        {Math.round(window.usedPercent)}% used
+                        {formatAccountLimitPercentLeft(window.usedPercent)}
                       </span>
                       <span className="shrink-0 whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground">
                         {resetAt === null ? "" : `resets ${resetAt}`}

@@ -28,7 +28,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { AccountLimitsHoverCard, AccountLimitsSidebarGauges } from "../usage/AccountLimits";
+import { AccountLimitsHoverCard } from "../usage/AccountLimits";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -213,7 +213,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
                     <SidebarMenuButton aria-label="Usage" onClick={handleUsageClick}>
                       <ChartNoAxesColumnIcon />
                       <span>Usage</span>
-                      <AccountLimitsSidebarGauges />
                     </SidebarMenuButton>
                   }
                 />

@@ -1,7 +1,6 @@
 import { cn } from "~/lib/utils";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { AccountLimitsHoverCard } from "../usage/AccountLimits";
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -86,11 +85,7 @@ export function ContextWindowMeter(props: {
         side="top"
         align="end"
         viewportClassName="p-0"
-        // h-auto!: the popup normally freezes at the height measured on open,
-        // but the limits card below updates in place after mount (cached ->
-        // fresh), so a frozen height clips its last row. Auto height follows
-        // the content.
-        className="h-auto! w-64 max-w-none text-left whitespace-normal"
+        className="w-64 max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
           <div className="flex items-center justify-between gap-3">
@@ -138,9 +133,6 @@ export function ContextWindowMeter(props: {
               {providerDisplayName ?? "It"} automatically compacts its context when needed.
             </div>
           ) : null}
-        </div>
-        <div className="border-t border-border/60 p-[var(--floating-content-inset)]">
-          <AccountLimitsHoverCard />
         </div>
       </PopoverPopup>
     </Popover>
