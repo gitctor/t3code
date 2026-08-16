@@ -2,19 +2,18 @@
 
 Date: 2026-08-15
 Branch: `build/crew-suite`
-QA HEAD: `18ca244198c0c8f4804f09fef1da366817485b61`
+Shipped implementation HEAD: `18ca244198c0c8f4804f09fef1da366817485b61`
 
 ## Final verdict
 
-The branch passed the install gate. T3 Code `0.0.34-crew.3` is installed at
+The shipped implementation passed the install gate. T3 Code `0.0.34-crew.3` is installed at
 `/Applications/T3 Code (Alpha).app`, is running, and serves HTTP/WebSocket traffic on port `3773`.
 
-The real database passed integrity checks after startup. It contains 23 threads and 476 turns.
-The same 476 turns were present immediately before the graceful quit, so the install created no
-turns and lost no live data.
+The real database passed integrity and foreign-key checks after startup. It contains 23 threads
+and 476 turns. All five new migrations are recorded, and every required table and column exists.
 
 One provider warning remains. Kimi is registered and its CLI version `1.49.0` is installed, but its
-live ACP startup check timed out after 15 seconds. I did not try to repair or reconfigure it.
+live ACP startup check timed out after 15 seconds. I did not repair or reconfigure it.
 
 ## Phase 1: QA findings
 
@@ -22,22 +21,26 @@ live ACP startup check timed out after 15 seconds. I did not try to repair or re
 
 - Working tree: clean before QA.
 - Branch: `build/crew-suite`.
-- HEAD on fork: `origin/build/crew-suite` resolves to the exact local HEAD above.
-- Merge, rebase, and cherry-pick state: none.
-- Linked review worktree: clean and detached at the same HEAD.
-- Pending `.plans` changes before this report: none.
+- Shipped implementation HEAD: exactly matches `origin/build/crew-suite` after a fresh fetch.
+- Starting local HEAD: one report-only commit ahead of the remote implementation. It was the
+  previous required local-only `.plans/final-qa-and-install-report.md` commit. No implementation
+  code was unpushed.
+- Merge, rebase, cherry-pick, and revert state: none.
+- Linked review worktree: clean and detached at the shipped implementation HEAD.
+- Pending `.plans` edits before this report: none.
 
 ### Focused tests
 
-`git diff --diff-filter=A origin/main...HEAD` found 41 test files added by this branch. Every added
-test file was included with the requested focused list.
+`git diff --diff-filter=A origin/main...origin/build/crew-suite` found 41 test files added by this
+branch. Every added test was included with the requested focused list.
 
-- Requested plus branch-added suite: 52 files passed, 571 tests passed.
-- Live native Ollama integration: 1 file passed, 1 test passed.
-- Total executed proof: 53 files and 572 tests passed.
+- Requested plus branch-added run: 52 files passed and 1 gated integration file skipped; 571 tests
+  passed and 1 integration test skipped.
+- Live native Ollama integration: 1 file and 1 test passed against the existing operator-owned
+  Ollama listener.
+- Distinct proof after the gated integration run: 53 files and 572 tests passed.
 
-The live Ollama integration used the existing operator-owned `ollama serve` process. It was not
-stopped or restarted.
+The install did not start, stop, or restart Ollama.
 
 ### Type checks
 
@@ -51,17 +54,17 @@ stopped or restarted.
 - `packages/client-runtime`: passed. One existing Effect suggestion only.
 - `apps/mobile`: the known 64 React Navigation route-inference errors remain.
 
-The mobile error count matches the prior branch report. No error is in a branch-added file or a
-changed hunk. Errors in changed files point only to unchanged lines, so this branch adds no mobile
-type error.
+The mobile error count matches the prior branch reports. No error is in a branch-added file or a
+changed hunk, so this branch adds no mobile type error.
 
 ### Migration safety on the backup copy
 
 Source backup:
 `/Users/victorfreyre/Documents/t3code-backup-20260815-224902/state.sqlite`
 
-The source passed `PRAGMA integrity_check` and contained 23 threads and 473 turns. I copied it to
-`/tmp/t3mig.sqlite` and ran the server's `runMigrations` path with foreign keys enabled and WAL mode.
+The source passed `PRAGMA integrity_check` and contained 23 threads and 473 turns. Its latest
+migration was 40. I copied it to `/tmp/t3mig.sqlite` and ran the server's real `runMigrations`
+function with foreign keys enabled and WAL journal mode.
 
 These migrations applied in order:
 
@@ -71,8 +74,8 @@ These migrations applied in order:
 4. `44_CrossThreadMessages`
 5. `45_CrewTestFlights`
 
-After migration, integrity remained `ok`. Counts remained 23 threads and 473 turns. The copied
-database contained:
+After migration, integrity remained `ok`, foreign-key violations remained zero, and counts
+remained 23 threads and 473 turns. The copy contained:
 
 - `projection_dispatches`
 - `projection_threads.parent_thread_id`
@@ -87,55 +90,58 @@ No separate Ollama or settings migration exists. Those additions use the decoded
 ### Safe defaults
 
 - `DEFAULT_SERVER_SETTINGS.crossThreadMessaging` is `off`.
+- New MCP credentials omit messaging tools while that setting is `off`.
 - `DEFAULT_SERVER_SETTINGS.crews` is `[]`.
-- The starter crew only prefills the editor. Source comments and behavior state that it is never
-  saved silently.
-- Crew selection starts as `null` unless a thread already has a crew or the operator selects one.
-- Messaging MCP tools are omitted when cross-thread messaging is `off`.
+- The starter crew only prefills an editor and is never saved silently.
+- Crew selection starts as `null` unless the current thread already used a crew.
+- Suggested-task cards render only from persisted suggestion records. The agent tool cannot accept
+  or auto-run a suggestion.
 
 ## Phase 2: install steps performed
 
 ### Backup and artifact
 
-- The backup still existed immediately before install.
+- The backup still existed immediately before install and was not changed.
 - Backup integrity: `ok`.
 - Backup counts: 23 threads and 473 turns.
 - DMG SHA-256:
   `32943751a796438038fd8edab5bf6bb5fa5154ec1a3d0cc707e0b0b8e6578304`.
-- Artifact bundle: `0.0.34-crew.3`, arm64.
+- Mounted bundle: `0.0.34-crew.3`, arm64.
 
-### Process safety and graceful quit
+### Process safety and app shutdown
 
-- T3 Code root PID before quit: `28097`.
-- One sleeping Claude child was present. I waited and checked again.
-- Both database checks showed zero active turns. The child was an idle retained provider session.
-- `ollama serve` PID `2095` remained running throughout.
-- T3 Code quit through AppleScript. All T3 processes exited in under one second.
-- No signal and no force kill was used.
+- T3 Code root PID before quit: `48716`.
+- T3-owned Claude, Codex, Kimi, or Ollama CLI children: zero.
+- Live database turn states before quit: 475 completed, 1 interrupted, 0 active.
+- Independent `ollama serve` PID `2095` remained running throughout.
+- AppleScript graceful quit did not complete within 60 seconds.
+- After the authorized timeout, I used `kill -9` on the captured and revalidated T3 root PID
+  `48716` only.
+- The server and resource monitor remained reparented, so I used `kill -9` on the captured and
+  revalidated T3 PIDs `48768` and `48787`.
+- All T3 app-bundle processes then exited. No other process was signaled.
 
 ### Installation
 
 1. Mounted the DMG read-only at `/dev/disk4`.
 2. Confirmed the mounted app was `0.0.34-crew.3` and arm64.
-3. Staged the complete bundle in `/Applications`.
-4. Replaced `/Applications/T3 Code (Alpha).app` with the staged bundle.
-5. Detached `/dev/disk4` successfully.
-6. Cleared `com.apple.quarantine` recursively.
-7. Confirmed the quarantine attribute is absent.
+3. Staged a complete copy in `/Applications`.
+4. Moved the prior installed app to
+   `/Users/victorfreyre/.Trash/T3 Code (Alpha) 0.0.34-crew.3 pre-reinstall-20260815-2348.app`.
+5. Moved the staged bundle into `/Applications/T3 Code (Alpha).app`.
+6. Detached `/dev/disk4` successfully.
+7. Cleared `com.apple.quarantine` recursively and confirmed the attribute is absent.
 8. Relaunched with `open -a 'T3 Code (Alpha)'`.
-
-The prior `0.0.33` app is recoverable from
-`/Users/victorfreyre/.Trash/T3 Code (Alpha) 0.0.33 pre-crew.app` until Trash is emptied.
 
 ## Phase 3: post-install verification
 
 ### App and server
 
 - Installed version: `0.0.34-crew.3`.
-- App root PID at verification: `48716`.
-- Server PID at verification: `48768`.
+- App root PID at verification: `61206`.
+- Server PID at verification: `61274`.
 - Runtime origin: `http://127.0.0.1:3773`.
-- Listener proof: server PID `48768` owns TCP `*:3773` in `LISTEN` state.
+- Listener proof: server PID `61274` owns TCP `*:3773` in `LISTEN` state.
 - HTTP proof: the origin returned the installed T3 web shell.
 
 ### Real userdata migration and counts
@@ -143,46 +149,58 @@ The prior `0.0.33` app is recoverable from
 Read-only checks against `/Users/victorfreyre/.t3/userdata/state.sqlite` showed:
 
 - Integrity: `ok`.
+- Foreign-key violations: zero.
 - Threads: 23.
 - Turns: 476.
-- Active turns after startup: 0.
+- Turn states: 475 completed and 1 interrupted; no active turn.
 - Applied migrations: 41 through 45, with the expected names.
 - New tables and columns: all items listed in the copied-database check exist.
 
 ### Live provider registry
 
-The current provider status cache was written by this installed server boot. It contains the four
-required provider instances:
+The installed server wrote fresh provider status caches during this boot. The required instances
+are present:
 
-| Instance | Driver | Installed state |
+| Instance | Driver | Current state |
 | --- | --- | --- |
 | `codex` | `codex` | Ready and authenticated; CLI `0.147.0`. |
 | `claudeAgent` | `claudeAgent` | Registered; startup cache says status has not been checked in this session. |
 | `kimi` | `kimi` | Registered and installed; CLI `1.49.0`; ACP startup timed out after 15 seconds. |
-| `ollama` | `ollama` | Ready and authenticated as `Local — free`; both `qwen3.6:27b-mlx` and `qwen3.6:35b-mlx` discovered. |
+| `ollama` | `ollama` | Ready and authenticated; `qwen3.6:27b-mlx` and default `qwen3.6:35b-mlx` discovered. |
 
 ## Operator action
 
 The app and database need no manual action.
 
-Before using Kimi, open Settings -> Providers -> Kimi and refresh it. If it still reports the ACP
-timeout, run `kimi` in Terminal and complete `/login` if requested. Claude can also be refreshed
-from its provider card if its initial unchecked warning remains.
+Before using Kimi, open Settings -> Providers -> Kimi and refresh it. If the timeout remains, run
+`kimi` in Terminal and complete `/login` if requested. Claude can also be refreshed from its
+provider card if its initial unchecked warning remains.
 
-No provider credentials, settings file, or authentication state was changed during this install.
+No provider credential, settings file, or authentication state was changed during this pass.
 
 ## Emergency database restore command
 
-This restore is not required for the Kimi timeout. Use it only to return the database to the
-verified backup point. It restores 23 threads and 473 turns, so it discards the three newer turns
-present before installation.
+This restore is not required for the Kimi timeout. It restores 23 threads and 473 turns, so it
+discards the three turns created after the verified backup.
 
 ```sh
+set -euo pipefail
 osascript -e 'tell application "T3 Code (Alpha)" to quit'
-while osascript -e 'application "T3 Code (Alpha)" is running' | grep -q true; do sleep 1; done
-mv '/Users/victorfreyre/.t3/userdata/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite.before-crew3-restore'
-if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' ]; then mv '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' '/Users/victorfreyre/.t3/userdata/state.sqlite-wal.before-crew3-restore'; fi
-if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' ]; then mv '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' '/Users/victorfreyre/.t3/userdata/state.sqlite-shm.before-crew3-restore'; fi
+for attempt in {1..60}; do
+  if ! osascript -e 'application "T3 Code (Alpha)" is running' | grep -q true; then break; fi
+  sleep 1
+done
+if osascript -e 'application "T3 Code (Alpha)" is running' | grep -q true; then
+  echo 'T3 Code is still running. Stop it before restoring the database.' >&2
+  exit 1
+fi
+mv '/Users/victorfreyre/.t3/userdata/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite.before-crew3-restore-20260815-finalqa'
+if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' ]; then
+  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-wal' '/Users/victorfreyre/.t3/userdata/state.sqlite-wal.before-crew3-restore-20260815-finalqa'
+fi
+if [ -e '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' ]; then
+  mv '/Users/victorfreyre/.t3/userdata/state.sqlite-shm' '/Users/victorfreyre/.t3/userdata/state.sqlite-shm.before-crew3-restore-20260815-finalqa'
+fi
 cp '/Users/victorfreyre/Documents/t3code-backup-20260815-224902/state.sqlite' '/Users/victorfreyre/.t3/userdata/state.sqlite'
 sqlite3 -readonly '/Users/victorfreyre/.t3/userdata/state.sqlite' 'PRAGMA integrity_check;'
 open -a 'T3 Code (Alpha)'
@@ -190,6 +208,7 @@ open -a 'T3 Code (Alpha)'
 
 ## Proof limits
 
-This pass proves source tests, package type checks, a live Ollama adapter call, copied-data
+This pass proves focused source tests, package type checks, a live Ollama adapter call, copied-data
 migration safety, installed process startup, listener ownership, real-data migration survival, and
-live provider-registry contents. It did not perform a browser-driven visual or interaction pass.
+fresh provider-registry cache contents. It did not perform a browser-driven visual or interaction
+pass.
